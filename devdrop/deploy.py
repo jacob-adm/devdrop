@@ -26,6 +26,8 @@ ANDROID_FAILURES = {
     "INSTALL_FAILED_ALREADY_EXISTS": "app already installed; use --clean",
 }
 _FAILURE = re.compile(r"Failure \[([A-Z_]+)(?::[^\]]*)?\]|(INSTALL_[A-Z_]+)")
+# package/activity as printed by `cmd package resolve-activity --brief`.
+_COMPONENT = re.compile(r"^[A-Za-z][\w.]*/[\w.$]+$")
 
 
 class StepError(Exception):
@@ -78,11 +80,17 @@ class Android:
     def launch(self, dev, package, fallback=""):
         r = self._adb(dev, "shell", "cmd", "package", "resolve-activity", "--brief",
                       "-c", "android.intent.category.LAUNCHER", package)
+        # Old Android (API 23 and below) has no `cmd`; its shell still exits 0 and
+        # prints "/system/bin/sh: cmd: not found", so check the shape, not the exit code.
         lines = [ln.strip() for ln in r.out.splitlines() if ln.strip()]
-        component = lines[-1] if r.rc == 0 and lines and "/" in lines[-1] else ""
+        component = lines[-1] if lines and _COMPONENT.match(lines[-1]) else ""
         if not component and fallback:
             component = f"{package}/{fallback}"
         if not component:
+            # Last resort on any Android version: let monkey fire the launcher intent.
+            r = self._adb(dev, "shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
+            if "Events injected: 1" in r.out + r.err:
+                return
             raise StepError("launch", "no launcher activity (is the app installed?)")
         r = self._adb(dev, "shell", "am", "start", "-n", component)
         out = r.out + r.err

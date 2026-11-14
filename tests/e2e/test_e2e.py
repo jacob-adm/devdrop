@@ -6,7 +6,7 @@ Opt-in, because it boots devices and takes minutes:
     DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v
 
 Settings (environment):
-    DEVDROP_E2E_AVDS     comma-separated AVD names (default: devdrop_api24,29,34,35,36)
+    DEVDROP_E2E_AVDS     comma-separated AVD names (default: DEFAULT_AVDS below)
     DEVDROP_E2E_SIMS     comma-separated simulator names or UDIDs
                          (default: the first iPhone simulator of each installed iOS runtime)
 
@@ -32,6 +32,13 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 ENABLED = os.environ.get("DEVDROP_E2E") == "1"
 CACHE = os.environ.get("DEVDROP_E2E_CACHE") or os.path.expanduser("~/.cache/devdrop-e2e")
 PACKAGE = "dev.devdrop.e2e"
+# Chosen where adb behaves differently, not by market share:
+#   23  no `cmd package`: launch must fall back to the manifest launcher
+#   24  oldest with `cmd package resolve-activity`; 29 scoped storage era
+#   29_lowmem  the same image with 1 GB of RAM
+#   34, 35, 36  current; 37 newest release
+DEFAULT_AVDS = ("devdrop_api23,devdrop_api24,devdrop_api29,devdrop_api29_lowmem,"
+                "devdrop_api34,devdrop_api35,devdrop_api36,devdrop_api37")
 
 S = {}            # shared state: devdrop path, fixtures, device ids
 REPORT = []       # every devdrop run, for the report file
@@ -87,8 +94,7 @@ def _set_up():
 
     _, devs, _ = devdrop("devices", "--all", "--json")
     S["adb"] = devs["backends"]["android"]["tool"]
-    avds = os.environ.get("DEVDROP_E2E_AVDS",
-                          "devdrop_api24,devdrop_api29,devdrop_api34,devdrop_api35,devdrop_api36").split(",")
+    avds = os.environ.get("DEVDROP_E2E_AVDS", DEFAULT_AVDS).split(",")
     known = {d["name"] for d in devs["devices"] if d["platform"] == "android" and d["kind"] == "emulator"}
     missing = [a for a in avds if a not in known]
     if missing:
@@ -125,6 +131,13 @@ def _set_up():
 
     targets = ",".join(S["avds"] + S["sims"])
     rc, out, r = devdrop("boot", "--to", targets, "--json", "--boot-timeout", "600")
+    failed = [x["id"] for x in out["results"] if x["result"] != "ok"]
+    if failed:
+        # The Android emulator occasionally crashes at start when many boot at once
+        # (seen: "Attempted to set thread local GL render thread info twice").
+        # Retry those once; the report records it.
+        S["boot_retries"] = {x["id"]: x["reason"] for x in out["results"] if x["result"] != "ok"}
+        rc, out, r = devdrop("boot", "--to", ",".join(failed), "--json", "--boot-timeout", "600")
     if rc != 0:
         raise RuntimeError(f"boot failed: {r.stdout}{r.stderr}")
     _, devs, _ = devdrop("devices", "--json")
@@ -144,9 +157,13 @@ def tearDownModule():
                 running.append(d["id"])
         if running:
             devdrop("shutdown", "--to", ",".join(running), "--json")
+            S["left_running"] = [x for x in subprocess.run([S["adb"], "devices"], capture_output=True,
+                                                           text=True).stdout.split() if x in running]
     finally:
         with open(os.path.join(CACHE, "e2e-report.json"), "w") as f:
             json.dump({"avds": S.get("avds"), "sims": S.get("sims"), "ios_versions": S.get("sim_os"),
+                       "left_running_after_shutdown": S.get("left_running"),
+                       "boot_retries": S.get("boot_retries"),
                        "android_api": S.get("api"), "runs": REPORT}, f, indent=2)
         shutil.rmtree(S.get("venv", ""), ignore_errors=True)
 
@@ -191,7 +208,8 @@ class B_Android(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["ok"], len(S["serials"]))
         for rec in out["results"]:      # every result names the device family it came from
-            self.assertEqual((rec["manufacturer"], rec["api"]), ("Google", S["api"][rec["id"]]))
+            maker = adb(rec["id"], "shell", "getprop", "ro.product.manufacturer").strip()
+            self.assertEqual((rec["manufacturer"], rec["api"]), (maker, S["api"][rec["id"]]))
             self.assertTrue(rec["model"] and rec["os_version"])
         time.sleep(2)
         for serial in S["serials"].values():
@@ -253,6 +271,20 @@ class B_Android(unittest.TestCase):
             with self.subTest(serial=serial):
                 top = adb(serial, "shell", "dumpsys", "activity", "activities")
                 self.assertIn(PACKAGE, top)
+
+    def test_5b_launch_without_cmd_package_uses_manifest_launcher(self):
+        old = [s for s in S["serials"].values() if S["api"][s] < 24]
+        if not old:
+            self.skipTest("no device below API 24 in the matrix")
+        for serial in old:
+            # Precondition: this device really cannot resolve the launcher itself.
+            probe = adb(serial, "shell", "cmd", "package", "resolve-activity", "--brief", PACKAGE)
+            self.assertNotIn(f"{PACKAGE}/", probe)
+        rc, out, _ = devdrop("install", apk("app-alias"), "--to", ",".join(old), "--clean", "--launch", "--json")
+        self.assertEqual(rc, 0, out)
+        time.sleep(2)
+        for serial in old:
+            self.assertIn(f"{PACKAGE}/.Main", adb(serial, "shell", "dumpsys", "activity", "activities"))
 
     def test_6_launch_uninstall_twice(self):
         devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--json")

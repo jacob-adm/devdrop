@@ -127,10 +127,18 @@ def boot_simulator(xcrun, udid, timeout, show=False):
         run(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid])
 
 
-def shutdown(adb, xcrun, dev):
+def shutdown(adb, xcrun, dev, timeout=60):
+    """Stop an emulator or simulator and return once it is really gone."""
     if dev.platform == "android":
         r = run([adb, "-s", dev.id, "emu", "kill"])
     else:
-        r = run([xcrun, "simctl", "shutdown", dev.id])
+        r = run([xcrun, "simctl", "shutdown", dev.id])     # returns when shut down
     if r.rc != 0:
         raise ToolError((r.err or r.out).strip() or f"exit {r.rc}")
+    if dev.platform == "android":
+        # `emu kill` only asks the emulator to quit; wait until adb no longer lists it.
+        deadline = time.monotonic() + timeout
+        while dev.id in [ln.split()[0] for ln in run([adb, "devices"]).out.splitlines()[1:] if ln.strip()]:
+            if time.monotonic() >= deadline:
+                raise ToolError(f"{dev.id} still running {timeout}s after emu kill")
+            time.sleep(min(POLL, max(0.0, deadline - time.monotonic())))
