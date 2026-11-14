@@ -1,0 +1,118 @@
+{
+ "devices": {
+  "com.apple.CoreSimulator.SimRuntime.tvOS-18-5": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000001",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-4K",
+    "state": "Shutdown",
+    "name": "Apple TV 4K (3rd generation)"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000002",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-1080p",
+    "state": "Shutdown",
+    "name": "Apple TV 4K (3rd generation) (at 1080p)"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.watchOS-26-2": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000003",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-46mm",
+    "state": "Booted",
+    "name": "Apple Watch Series 11 (46mm)"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000004",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-42mm",
+    "state": "Shutdown",
+    "name": "Apple Watch Series 11 (42mm)"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.xrOS-2-5": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000005",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro",
+    "state": "Shutdown",
+    "name": "Apple Vision Pro"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.iOS-18-5": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000006",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro",
+    "state": "Booted",
+    "name": "iPhone 16 Pro"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000007",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max",
+    "state": "Shutdown",
+    "name": "iPhone 16 Pro Max"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.iOS-26-3": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000008",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "state": "Shutdown",
+    "name": "iPhone 17 Pro"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000009",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max",
+    "state": "Shutdown",
+    "name": "iPhone 17 Pro Max"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.xrOS-26-2": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000010",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro-4K",
+    "state": "Shutdown",
+    "name": "Apple Vision Pro"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.tvOS-26-2": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000011",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-4K",
+    "state": "Shutdown",
+    "name": "Apple TV 4K (3rd generation)"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000012",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-1080p",
+    "state": "Shutdown",
+    "name": "Apple TV 4K (3rd generation) (at 1080p)"
+   }
+  ],
+  "com.apple.CoreSimulator.SimRuntime.watchOS-11-5": [
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000013",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-10-46mm",
+    "state": "Booted",
+    "name": "Apple Watch Series 10 (46mm)"
+   },
+   {
+    "udid": "AAAAAAAA-0000-0000-0000-000000000014",
+    "isAvailable": true,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-10-42mm",
+    "state": "Shutdown",
+    "name": "Apple Watch Series 10 (42mm)"
+   }
+  ]
+ }
+}
