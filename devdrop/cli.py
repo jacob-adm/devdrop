@@ -4,6 +4,8 @@
 import argparse
 import json
 import sys
+import tempfile
+import zipfile
 
 from devdrop import __version__, android, artifact, config, deploy, ios
 from devdrop.select import SelectorError, select
@@ -220,15 +222,15 @@ def _print_record(rec):
     print(f"{rec['result']:8} {safe(label)}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
 
 
-def _targets(args, cfg, platform):
-    """Selected ready-or-not devices of one platform, or an exit code."""
-    devices, backends = inventory(platforms=(platform,))
-    b = backends[platform]
-    if b["tool"] is None:
-        print(f"devdrop: {safe(b['error'])}", file=sys.stderr)
+def _targets(args, cfg, platforms):
+    """Selected devices on the given platforms and the tool for each, or an exit code."""
+    devices, backends = inventory(platforms=platforms)
+    tools = {p: b["tool"] for p, b in backends.items() if b["tool"]}
+    for p, b in backends.items():
+        if b["error"] and (b["tool"] or len(platforms) == 1):
+            print(f"devdrop: {p}: {safe(b['error'])}", file=sys.stderr)
+    if not tools:
         return NO_TOOLS
-    if b["error"]:
-        print(f"devdrop: {platform}: {safe(b['error'])}", file=sys.stderr)
     for d in devices:
         d.name = _name(cfg, d)
     try:
@@ -237,15 +239,14 @@ def _targets(args, cfg, platform):
         print(f"devdrop: {e}", file=sys.stderr)
         return USAGE
     if not chosen:
-        print(f"devdrop: no {platform} device matches --to {safe(args.to)}", file=sys.stderr)
+        which = platforms[0] if len(platforms) == 1 else "attached"
+        print(f"devdrop: no {which} device matches --to {safe(args.to)}", file=sys.stderr)
         return NO_DEVICES
-    return chosen, b["tool"]
+    return chosen, {p: _backend(p, t) for p, t in tools.items()}
 
 
 def _backend(platform, tool):
-    if platform == "android":
-        return deploy.Android(tool)
-    return None
+    return deploy.Android(tool) if platform == "android" else deploy.Ios(tool)
 
 
 def cmd_install(args):
@@ -257,17 +258,21 @@ def cmd_install(args):
     except artifact.ArtifactError as e:
         print(f"devdrop: {safe(e)}", file=sys.stderr)
         return USAGE
-    if report["platform"] == "ios":
-        print("devdrop: installing iOS builds is not supported yet", file=sys.stderr)
-        return USAGE
-    found = _targets(args, cfg, report["platform"])
+    found = _targets(args, cfg, (report["platform"],))
     if isinstance(found, int):
         return found
-    chosen, tool = found
-    backend = _backend(report["platform"], tool)
-    records = deploy.fan_out(
-        chosen, lambda d: deploy.install_one(backend, d, report, args.clean, args.launch),
-        args.jobs, None if args.json else _print_record)
+    chosen, backends = found
+    backend = backends[report["platform"]]
+    with tempfile.TemporaryDirectory(prefix="devdrop-") as tmp:
+        if report["type"] == "ipa":
+            try:
+                report["app_path"] = deploy.unpack_ipa(report["path"], tmp)
+            except (deploy.StepError, OSError, zipfile.BadZipFile) as e:
+                print(f"devdrop: {safe(args.path)}: {safe(e)}", file=sys.stderr)
+                return USAGE
+        records = deploy.fan_out(
+            chosen, lambda d: deploy.install_one(backend, d, report, args.clean, args.launch),
+            args.jobs, None if args.json else _print_record)
     return _summary(records, args.json)
 
 
@@ -275,13 +280,13 @@ def cmd_by_id(args):
     cfg = _load_config(args)
     if cfg is None:
         return USAGE
-    found = _targets(args, cfg, "android")
+    found = _targets(args, cfg, ("android", "ios"))
     if isinstance(found, int):
         return found
-    chosen, tool = found
-    backend = _backend("android", tool)
+    chosen, backends = found
+    chosen = [d for d in chosen if d.platform in backends]
     records = deploy.fan_out(
-        chosen, lambda d: deploy.by_id_one(args.command, backend, d, args.app_id),
+        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id),
         args.jobs, None if args.json else _print_record)
     return _summary(records, args.json)
 
@@ -325,7 +330,7 @@ def build_parser():
     ins.set_defaults(func=cmd_install)
     for name, text in (("launch", "start an installed app"), ("uninstall", "remove an app")):
         c = sub.add_parser(name, help=f"{text} on every selected device")
-        c.add_argument("app_id", help="Android package name")
+        c.add_argument("app_id", help="Android package name or iOS bundle id")
         _target_args(c)
         c.set_defaults(func=cmd_by_id)
     doc = sub.add_parser("doctor", help="check the toolchain and each device's state")
