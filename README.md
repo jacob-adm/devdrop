@@ -164,6 +164,17 @@ snapshots of the emulators the run started are deleted afterwards, so
 repeated runs do not fill the disk. A
 per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
 
+## Tested on
+
+- Android emulators (Google system images, arm64): API 23, 24, 29 (also
+  with 1 GB of RAM), 34, 35, 36 and 37.
+- iOS simulators: iOS 18.5 and 26.3.
+- A physical iPhone on iOS 26: device listing, state checks and launch.
+  Installing a signed build on a physical iPhone has not been tested yet.
+- Not yet tested on physical Android phones, including vendor builds such
+  as Samsung One UI or Xiaomi HyperOS, whose install prompts and
+  restrictions differ from Google's images.
+
 ## License
 
 Apache-2.0
