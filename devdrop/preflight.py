@@ -18,7 +18,7 @@ def check(report, device):
 
 
 def _android(report, device):
-    if not report.get("signing"):
+    if report.get("type") == "apk" and not report.get("signing"):
         return "APK is not signed"
     min_sdk = report.get("min_sdk")
     if isinstance(min_sdk, str):

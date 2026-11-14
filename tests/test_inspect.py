@@ -113,7 +113,7 @@ class Apk(Tmp):
         b.ipa(p, b.info_plist())
         with self.assertRaisesRegex(artifact.ArtifactError, "no AndroidManifest.xml"):
             artifact.inspect(p)
-        with self.assertRaisesRegex(artifact.ArtifactError, "not supported yet"):
+        with self.assertRaisesRegex(artifact.ArtifactError, "not a valid zip"):
             open(self.path("x.aab"), "wb").close()
             artifact.inspect(self.path("x.aab"))
         with self.assertRaisesRegex(artifact.ArtifactError, "not found"):

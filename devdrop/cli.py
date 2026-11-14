@@ -9,7 +9,7 @@ import tempfile
 import time
 import zipfile
 
-from devdrop import __version__, android, artifact, config, deploy, ios, preflight, virtual
+from devdrop import __version__, android, artifact, bundle, config, deploy, ios, preflight, virtual
 from devdrop.select import SelectorError, select
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
@@ -204,6 +204,8 @@ def cmd_inspect(args):
     profile = report.pop("profile", None)
     page = report.pop("page_16k", None)
     for key, value in report.items():
+        if key == "signing" and value is None:
+            value = "at install (bundletool)"
         if isinstance(value, list):
             value = ", ".join(map(str, value)) or "-"
         print(f"{key + ':':12} {safe(value) if value != '' else '-'}")
@@ -272,8 +274,8 @@ def _targets(args, cfg, platforms):
     return chosen, {p: _backend(p, t) for p, t in tools.items()}
 
 
-def _backend(platform, tool):
-    return deploy.Android(tool) if platform == "android" else deploy.Ios(tool)
+def _backend(platform, tool, bundle_setup=None):
+    return deploy.Android(tool, bundle_setup) if platform == "android" else deploy.Ios(tool)
 
 
 def _boot_one(adb, xcrun, dev, timeout, show):
@@ -375,6 +377,12 @@ def cmd_install(args):
     chosen, backends = found
     backend = backends[report["platform"]]
     with tempfile.TemporaryDirectory(prefix="devdrop-") as tmp:
+        if report["type"] == "aab":
+            try:
+                backend.bundle = (bundle.find_bundletool(), bundle.signing(args.ks, args.ks_alias, tmp), tmp)
+            except bundle.BundleError as e:
+                print(f"devdrop: {safe(e)}", file=sys.stderr)
+                return NO_TOOLS if isinstance(e, bundle.BundletoolMissing) else USAGE
         if report["type"] == "ipa":
             try:
                 report["app_path"] = deploy.unpack_ipa(report["path"], tmp)
@@ -446,6 +454,9 @@ def build_parser():
     ins.add_argument("path")
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
+    ins.add_argument("--ks", metavar="KEYSTORE", help=".aab only: keystore to sign the built APKs "
+                     "(password in DEVDROP_KS_PASS; default: the Android debug keystore)")
+    ins.add_argument("--ks-alias", metavar="ALIAS", help=".aab only: key alias in --ks")
     _target_args(ins)
     _boot_args(ins, "start stopped emulators and simulators that --to names, then install")
     ins.set_defaults(func=cmd_install)

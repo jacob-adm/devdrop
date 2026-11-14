@@ -8,7 +8,7 @@ import posixpath
 import struct
 import zipfile
 
-from devdrop import axml
+from devdrop import axml, protoxml
 
 
 class ArtifactError(ValueError):
@@ -36,6 +36,8 @@ def inspect(path, now=None):
             return _apk(path)
         if lower.endswith(".ipa"):
             return _ipa(path, now)
+        if lower.endswith(".aab"):
+            return _aab(path)
     except ArtifactError:
         raise
     except zipfile.BadZipFile as e:
@@ -47,9 +49,7 @@ def inspect(path, now=None):
         # many exception types (zlib.error, RuntimeError for "encrypted" entries,
         # ExpatError, TypeError for wrongly typed plist values). Report, never crash.
         raise ArtifactError(f"{path}: unreadable build ({type(e).__name__}: {e})")
-    if lower.endswith(".aab"):
-        raise ArtifactError(f"{path}: Android App Bundles (.aab) are not supported yet; build an APK")
-    raise ArtifactError(f"{path}: unknown build type (expected .apk, .ipa or .app)")
+    raise ArtifactError(f"{path}: unknown build type (expected .apk, .aab, .ipa or .app)")
 
 
 # ---------------------------------------------------------------- Android
@@ -149,13 +149,8 @@ def _page_16k(path, z):
     return {"native_64bit": bool(libs), "ready": all(x["ready"] for x in libs), "libraries": libs}
 
 
-def _apk(path):
-    with zipfile.ZipFile(path) as z:
-        names = z.namelist()
-        if "AndroidManifest.xml" not in names:
-            raise ArtifactError(f"{path}: no AndroidManifest.xml (not an APK)")
-        root = axml.parse(z.read("AndroidManifest.xml"))
-        page_16k = _page_16k(path, z)
+def _android_report(kind, path, root, lib_names, page_16k, signing):
+    """The report shared by APKs and App Bundles, from the manifest's element tree."""
     if root.tag != "manifest":
         raise ArtifactError(f"{path}: AndroidManifest.xml root is <{root.tag}>, not <manifest>")
     sdk = next(root.find_all("uses-sdk"), None)
@@ -166,26 +161,60 @@ def _apk(path):
         launcher = package + launcher
     elif launcher and "." not in launcher:      # bare class name: relative to the package
         launcher = f"{package}.{launcher}"
-    abis = sorted({n.split("/")[1] for n in names
-                   if n.startswith("lib/") and n.endswith(".so") and n.count("/") >= 2})
     min_sdk = _int_or_codename(sdk.attrs.get("minSdkVersion", 1)) if sdk else 1
     return {
-        "type": "apk",
+        "type": kind,
         "platform": "android",
         "path": path,
-        "id": package,
-        "version": str(root.attrs.get("versionName", "")),
-        "build": str(root.attrs.get("versionCode", "")),
+        "id": _text(package),
+        "version": _text(root.attrs.get("versionName", "")),
+        "build": _text(root.attrs.get("versionCode", "")),
         "min_sdk": min_sdk,
         "target_sdk": _int_or_codename(sdk.attrs.get("targetSdkVersion", min_sdk)) if sdk else min_sdk,
-        "abis": abis,                       # empty: no native code, runs on any ABI
-        "debuggable": bool(app.attrs.get("debuggable", False)) if app else False,
+        "abis": sorted({n.split("/")[-2] for n in lib_names}),   # empty: no native code, any ABI
+        "debuggable": app.attrs.get("debuggable", False) in (True, "true") if app else False,
         "launcher": launcher,
-        "split": str(root.attrs.get("split", "")),
-        "signing": _apk_signing(path, names),
+        "split": _text(root.attrs.get("split", "")),
+        "signing": signing,
         "page_16k": page_16k,
         "page_size_compat": _text(app.attrs.get("pageSizeCompat", "")) if app else "",
     }
+
+
+def _libs(names, prefix):
+    """Native libraries directly under <prefix>lib/<abi>/."""
+    depth = prefix.count("/") + 3
+    return [n for n in names if n.startswith(prefix + "lib/") and n.endswith(".so") and n.count("/") == depth - 1]
+
+
+def _apk(path):
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        if "AndroidManifest.xml" not in names:
+            raise ArtifactError(f"{path}: no AndroidManifest.xml (not an APK)")
+        root = axml.parse(z.read("AndroidManifest.xml"))
+        page_16k = _page_16k(path, z)
+    return _android_report("apk", path, root, _libs(names, ""), page_16k, _apk_signing(path, names))
+
+
+def _aab(path):
+    """An Android App Bundle: protobuf manifest in base/; signed later, by bundletool."""
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        manifest = "base/manifest/AndroidManifest.xml"
+        if manifest not in names:
+            raise ArtifactError(f"{path}: no {manifest} (not an App Bundle)")
+        root = protoxml.parse(z.read(manifest))
+        libs = _libs(names, "base/")
+        page = []
+        for name in libs:
+            if name.split("/")[2] in ABIS_64:
+                align = elf_load_align(z.read(name))
+                # Zip placement is decided later, when bundletool builds the APKs.
+                page.append({"path": name, "elf_align": align, "stored": None, "zip_aligned_16k": None,
+                             "ready": align is not None and align >= PAGE_16K})
+    page_16k = {"native_64bit": bool(page), "ready": all(x["ready"] for x in page), "libraries": page}
+    return _android_report("aab", path, root, libs, page_16k, None)
 
 
 # ---------------------------------------------------------------- iOS
