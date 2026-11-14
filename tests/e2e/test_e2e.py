@@ -190,6 +190,9 @@ class B_Android(unittest.TestCase):
         rc, out, _ = devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--launch", "--json")
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["ok"], len(S["serials"]))
+        for rec in out["results"]:      # every result names the device family it came from
+            self.assertEqual((rec["manufacturer"], rec["api"]), ("Google", S["api"][rec["id"]]))
+            self.assertTrue(rec["model"] and rec["os_version"])
         time.sleep(2)
         for serial in S["serials"].values():
             with self.subTest(serial=serial):
@@ -285,6 +288,8 @@ class C_Ios(unittest.TestCase):
         sims = ",".join(S["sims"])
         rc, out, _ = devdrop("install", ios("ios-sim"), "--to", sims, "--clean", "--launch", "--json")
         self.assertEqual(rc, 0, out)
+        for rec in out["results"]:
+            self.assertEqual((rec["manufacturer"], rec["os_version"]), ("Apple", S["sim_os"][rec["id"]]))
         time.sleep(2)
         for udid in S["sims"]:
             self.assertTrue(self.installed(udid))

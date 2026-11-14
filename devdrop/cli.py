@@ -109,10 +109,10 @@ def cmd_devices(args):
                   sys.stdout, indent=2)
         print()
     else:
-        rows = [("ID", "NAME", "PLATFORM", "KIND", "MODEL", "OS", "STATE")]
+        rows = [("ID", "NAME", "PLATFORM", "KIND", "MAKER", "MODEL", "OS", "STATE")]
         for d in devices:
             os_text = " ".join(x for x in (d.os_version, f"(API {d.api})" if d.api else "") if x)
-            rows.append((d.id, d.name, d.platform, d.kind, d.model, os_text, d.state))
+            rows.append((d.id, d.name, d.platform, d.kind, d.manufacturer, d.model, os_text, d.state))
         if devices:
             widths = [max(len(safe(r[i])) for r in rows) for i in range(len(rows[0]))]
             for r in rows:

@@ -15,6 +15,7 @@ class Device:
     kind: str               # "physical" | "emulator" | "simulator"
     state: str
     model: str = ""
+    manufacturer: str = ""  # "Samsung", "Google", "Apple", ...
     os_version: str = ""
     api: int | None = None  # Android API level
     abis: list = field(default_factory=list)

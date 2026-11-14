@@ -44,7 +44,9 @@ or a device whose UDID the profile does not list. Install failures from the devi
 translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards. Each device's result prints as it
-finishes, followed by a count.
+finishes, followed by a count. With `--json`, every result also names
+the device's maker, model, kind, OS version and Android API level, so a
+failure can be traced to a device family.
 
 iOS devices are driven with `xcrun devicectl` and simulators with
 `xcrun simctl`; an `.ipa` is unpacked to its `.app` first. Only booted

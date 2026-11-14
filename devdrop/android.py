@@ -60,6 +60,7 @@ def parse_getprop(text):
 
 def _apply_props(dev, props):
     dev.model = props.get("ro.product.model") or dev.model
+    dev.manufacturer = props.get("ro.product.manufacturer", "")
     dev.os_version = props.get("ro.build.version.release", "")
     sdk = props.get("ro.build.version.sdk", "")
     dev.api = int(sdk) if sdk.isdigit() else None

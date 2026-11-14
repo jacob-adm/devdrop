@@ -36,8 +36,10 @@ class StepError(Exception):
 
 
 def record(dev, result, stage, reason, started):
-    return {"id": dev.id, "name": dev.name, "platform": dev.platform, "result": result,
-            "stage": stage, "reason": reason, "seconds": round(time.monotonic() - started, 1)}
+    return {"id": dev.id, "name": dev.name, "platform": dev.platform, "kind": dev.kind,
+            "manufacturer": dev.manufacturer, "model": dev.model, "os_version": dev.os_version,
+            "api": dev.api, "result": result, "stage": stage, "reason": reason,
+            "seconds": round(time.monotonic() - started, 1)}
 
 
 def android_failure(text):
