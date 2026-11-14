@@ -9,7 +9,7 @@ import tempfile
 import time
 import zipfile
 
-from devdrop import __version__, android, artifact, bundle, config, deploy, ios, preflight, virtual
+from devdrop import __version__, android, artifact, bundle, config, deploy, ios, junit, preflight, virtual
 from devdrop.select import SelectorError, select
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
@@ -233,7 +233,16 @@ def cmd_inspect(args):
     return OK
 
 
-def _summary(records, as_json):
+def _summary(records, args):
+    if getattr(args, "junit", None):
+        try:
+            junit.write(args.junit, args.command, records)
+        except OSError as e:
+            print(f"devdrop: --junit {safe(args.junit)}: {safe(e)}", file=sys.stderr)
+    return _counts(records, args.json)
+
+
+def _counts(records, as_json):
     counts = {k: sum(r["result"] == k for r in records) for k in ("ok", "skipped", "failed")}
     if as_json:
         json.dump({"results": records, **counts}, sys.stdout, indent=2)
@@ -333,7 +342,7 @@ def cmd_boot(args):
         return code
     if not records and not args.json:
         print("nothing to boot: every matching device is already running")
-    return _summary(records, args.json)
+    return _summary(records, args)
 
 
 def cmd_shutdown(args):
@@ -359,7 +368,7 @@ def cmd_shutdown(args):
             return deploy.record(dev, "failed", "shutdown", str(e), started)
         return deploy.record(dev, "ok", "shutdown", "", started)
     records = deploy.fan_out(virtual_devs, stop, args.jobs, None if args.json else _print_record)
-    return _summary(records, args.json)
+    return _summary(records, args)
 
 
 def cmd_install(args):
@@ -407,7 +416,7 @@ def cmd_install(args):
     if args.watch and not records:
         print("devdrop: no device appeared", file=sys.stderr)
         return NO_DEVICES
-    return _summary([r for r in booted if r["result"] != "ok"] + records, args.json)
+    return _summary([r for r in booted if r["result"] != "ok"] + records, args)
 
 
 def _watch(args, cfg, platform, handled, work):
@@ -480,7 +489,7 @@ def cmd_by_id(args):
     records = deploy.fan_out(
         chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log),
         args.jobs, None if args.json else _print_record)
-    return _summary(records, args.json)
+    return _summary(records, args)
 
 
 def _launch_log(args):
@@ -519,6 +528,7 @@ def _target_args(p, default="all"):
                         "comma-separated terms are combined")
     p.add_argument("--jobs", type=_positive, metavar="N", help="devices handled at once (default: up to 8)")
     p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument("--junit", metavar="FILE", help="also write the results as JUnit XML, one testcase per device")
 
 
 def build_parser():
