@@ -28,8 +28,11 @@ devdrop doctor                     check the toolchain; say what to fix on each 
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
+                [--watch [--watch-timeout S]]
 devdrop launch APP_ID [--to SEL] [--jobs N] [--json]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
+devdrop pair HOST:PORT CODE        pair with an Android device over Wi-Fi
+devdrop connect [HOST:PORT ...]    connect over Wi-Fi (default: every paired device found by mDNS)
 devdrop boot --to SEL [--show] [--boot-timeout S] [--json]
 devdrop shutdown [--to SEL] [--json]
 ```
@@ -69,6 +72,21 @@ iOS devices are driven with `xcrun devicectl` and simulators with
 `xcrun simctl`; an `.ipa` is unpacked to its `.app` first. Only booted
 simulators are targets. `launch` and `uninstall` take an Android package
 name or an iOS bundle id and act on every selected device.
+
+## Wi-Fi and devices that come and go
+
+On Android 11 and later, turn on Developer options > Wireless debugging,
+tap "Pair device with pairing code", and run `devdrop pair HOST:PORT
+CODE` with the address and code the phone shows. After that, `devdrop
+connect` finds paired phones on the network (mDNS) and connects to them;
+`devdrop connect HOST:PORT` connects to one address. A phone attached by
+both USB and Wi-Fi is listed and installed to once, over USB.
+
+`install --watch` keeps running after the first pass: every device that
+matches `--to` and becomes ready later (plugged in, booted, connected
+over Wi-Fi) gets the build once, and its result prints as it finishes.
+Ctrl-C, or `--watch-timeout SECONDS`, ends the run with the usual
+summary and exit code.
 
 ## Emulators and simulators
 

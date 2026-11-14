@@ -251,7 +251,10 @@ def _print_record(rec):
         print(f"{'':8} warning: {safe(note)}", flush=True)
 
 
-def _targets(args, cfg, platforms):
+WATCH_POLL = 2.0
+
+
+def _targets(args, cfg, platforms, allow_empty=False):
     """Selected devices on the given platforms and the tool for each, or an exit code."""
     devices, backends = inventory(platforms=platforms)
     tools = {p: b["tool"] for p, b in backends.items() if b["tool"]}
@@ -267,7 +270,7 @@ def _targets(args, cfg, platforms):
     except SelectorError as e:
         print(f"devdrop: {e}", file=sys.stderr)
         return USAGE
-    if not chosen:
+    if not chosen and not allow_empty:
         which = platforms[0] if len(platforms) == 1 else "attached"
         print(f"devdrop: no {which} device matches --to {safe(args.to)}", file=sys.stderr)
         return NO_DEVICES
@@ -371,11 +374,12 @@ def cmd_install(args):
         booted, code = _boot(args, cfg, (report["platform"],))
         if code is not None:
             return code
-    found = _targets(args, cfg, (report["platform"],))
+    found = _targets(args, cfg, (report["platform"],), allow_empty=args.watch)
     if isinstance(found, int):
         return found
     chosen, backends = found
     backend = backends[report["platform"]]
+    chosen = [d for d in chosen if d.state == READY] if args.watch else chosen
     with tempfile.TemporaryDirectory(prefix="devdrop-") as tmp:
         if report["type"] == "aab":
             try:
@@ -389,10 +393,72 @@ def cmd_install(args):
             except (deploy.StepError, OSError, zipfile.BadZipFile) as e:
                 print(f"devdrop: {safe(args.path)}: {safe(e)}", file=sys.stderr)
                 return USAGE
-        records = deploy.fan_out(
-            chosen, lambda d: deploy.install_one(backend, d, report, args.clean, args.launch),
-            args.jobs, None if args.json else _print_record)
+        def work(dev):
+            return deploy.install_one(backend, dev, report, args.clean, args.launch)
+        records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
+        if args.watch:
+            records += _watch(args, cfg, report["platform"], {r["id"] for r in records}, work)
+    if args.watch and not records:
+        print("devdrop: no device appeared", file=sys.stderr)
+        return NO_DEVICES
     return _summary([r for r in booted if r["result"] != "ok"] + records, args.json)
+
+
+def _watch(args, cfg, platform, handled, work):
+    """Install on each matching device that becomes ready, once, until Ctrl-C or the timeout."""
+    deadline = time.monotonic() + args.watch_timeout if args.watch_timeout else None
+    if not args.json:
+        print("watching for devices (Ctrl-C to stop)", flush=True)
+    records = []
+    try:
+        while deadline is None or time.monotonic() < deadline:
+            time.sleep(WATCH_POLL if deadline is None else max(0.0, min(WATCH_POLL, deadline - time.monotonic())))
+            devices, _ = inventory(platforms=(platform,))
+            for d in devices:
+                d.name = _name(cfg, d)
+            new = [d for d in select(devices, args.to, cfg) if d.state == READY and d.id not in handled]
+            if new:
+                handled.update(d.id for d in new)
+                records += deploy.fan_out(new, work, args.jobs, None if args.json else _print_record)
+    except KeyboardInterrupt:
+        pass
+    return records
+
+
+def cmd_pair(args):
+    adb = find_adb()
+    if adb is None:
+        print("devdrop: adb not found (install Android SDK platform-tools)", file=sys.stderr)
+        return NO_TOOLS
+    try:
+        print(safe(android.pair(adb, args.address, args.code)))
+    except ToolError as e:
+        print(f"devdrop: pair {safe(args.address)}: {safe(e)}", file=sys.stderr)
+        return PARTIAL
+    return OK
+
+
+def cmd_connect(args):
+    adb = find_adb()
+    if adb is None:
+        print("devdrop: adb not found (install Android SDK platform-tools)", file=sys.stderr)
+        return NO_TOOLS
+    try:
+        addresses = args.address or android.discover(adb)
+    except ToolError as e:
+        print(f"devdrop: {safe(e)}", file=sys.stderr)
+        return PARTIAL
+    if not addresses:
+        print("devdrop: no device is advertising wireless debugging (pair it first)", file=sys.stderr)
+        return NO_DEVICES
+    failed = 0
+    for address in addresses:
+        try:
+            print(safe(android.connect(adb, address)))
+        except ToolError as e:
+            print(f"devdrop: connect {safe(address)}: {safe(e)}", file=sys.stderr)
+            failed += 1
+    return PARTIAL if failed else OK
 
 
 def cmd_by_id(args):
@@ -454,6 +520,10 @@ def build_parser():
     ins.add_argument("path")
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
+    ins.add_argument("--watch", action="store_true",
+                     help="keep running: install on each matching device as it connects (Ctrl-C to stop)")
+    ins.add_argument("--watch-timeout", type=_positive, metavar="SECONDS",
+                     help="with --watch: stop after this many seconds")
     ins.add_argument("--ks", metavar="KEYSTORE", help=".aab only: keystore to sign the built APKs "
                      "(password in DEVDROP_KS_PASS; default: the Android debug keystore)")
     ins.add_argument("--ks-alias", metavar="ALIAS", help=".aab only: key alias in --ks")
@@ -465,6 +535,13 @@ def build_parser():
         c.add_argument("app_id", help="Android package name or iOS bundle id")
         _target_args(c)
         c.set_defaults(func=cmd_by_id)
+    pr = sub.add_parser("pair", help="pair with an Android device over Wi-Fi (adb pair)")
+    pr.add_argument("address", help="HOST:PORT shown under Wireless debugging > Pair with pairing code")
+    pr.add_argument("code", help="the six-digit pairing code")
+    pr.set_defaults(func=cmd_pair)
+    cn = sub.add_parser("connect", help="connect to Android devices over Wi-Fi (adb connect)")
+    cn.add_argument("address", nargs="*", help="HOST:PORT; default: every paired device found by mDNS")
+    cn.set_defaults(func=cmd_connect)
     bt = sub.add_parser("boot", help="start stopped emulators and simulators and wait until booted")
     _target_args(bt, default=None)
     _boot_args(bt, None)
