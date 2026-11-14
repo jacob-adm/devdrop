@@ -193,3 +193,42 @@ class LaunchUninstallCommands(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecordFields(unittest.TestCase):
+    """Every result names the device family it came from."""
+
+    def test_android_and_ios_records(self):
+        fake = FakeTools()
+        self.addCleanup(fake.close)
+        props = PROPS + "[ro.product.manufacturer]: [{maker}]\n"
+        rules = adb_rules()
+        for i, (serial, api, rel, model) in enumerate(LAB):
+            maker = ("samsung", "Google", "LGE")[i]
+            rules.insert(0, {"match": ["-s", serial, "getprop"],
+                             "stdout": props.format(rel=rel, api=api, model=model, maker=maker)})
+        fake.add("adb", rules)
+        apk = os.path.join(fake.root, "a.apk")
+        b.apk(apk, b.axml(b.manifest(min_sdk=26)), v2=True)
+        out = json.loads(devdrop(fake, "install", apk, "--json").stdout)
+        recs = {r["id"]: r for r in out["results"]}
+        self.assertEqual({k: recs["AAA111"][k] for k in ("manufacturer", "model", "os_version", "api", "kind")},
+                         {"manufacturer": "samsung", "model": "Pixel 8", "os_version": "14", "api": 34,
+                          "kind": "physical"})
+        self.assertEqual((recs["CCC333"]["manufacturer"], recs["CCC333"]["api"], recs["CCC333"]["result"]),
+                         ("LGE", 23, "skipped"))
+        table = devdrop(fake, "devices").stdout
+        self.assertIn("MAKER", table.splitlines()[0])
+        self.assertIn("samsung", table)
+
+    def test_ios_records_say_apple(self):
+        from tests.test_ios_install import xcrun_rules as ios_rules, IPHONE
+        fake = FakeTools()
+        self.addCleanup(fake.close)
+        fake.add("xcrun", ios_rules())
+        r = json.loads(devdrop(fake, "launch", "com.example.app", "--to", "ios", "--json").stdout)
+        recs = {x["id"]: x for x in r["results"]}
+        self.assertEqual((recs[IPHONE]["manufacturer"], recs[IPHONE]["model"], recs[IPHONE]["os_version"]),
+                         ("Apple", "iPhone 17 Pro Max", "26.5.1"))
+        sim = next(x for x in r["results"] if x["kind"] == "simulator")
+        self.assertEqual((sim["manufacturer"], sim["os_version"]), ("Apple", "18.5"))
