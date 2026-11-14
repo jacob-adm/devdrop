@@ -5,7 +5,8 @@ import argparse
 import json
 import sys
 
-from devdrop import __version__, android, artifact, config, ios
+from devdrop import __version__, android, artifact, config, deploy, ios
+from devdrop.select import SelectorError, select
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
 
@@ -27,35 +28,44 @@ def safe(text):
     return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in str(text))
 
 
-def inventory(include_shutdown=False):
-    """All devices from every available backend, plus a status line per backend."""
-    devices, backends = [], {}
+def _android_backend():
     adb = find_adb()
     if adb is None:
-        backends["android"] = {"tool": None, "error": "adb not found (install Android SDK platform-tools)"}
-    else:
-        try:
-            devices += android.list_devices(adb)
-            backends["android"] = {"tool": adb, "error": None}
-        except ToolError as e:
-            backends["android"] = {"tool": adb, "error": str(e)}
+        return [], {"tool": None, "error": "adb not found (install Android SDK platform-tools)"}
+    try:
+        return android.list_devices(adb), {"tool": adb, "error": None}
+    except ToolError as e:
+        return [], {"tool": adb, "error": str(e)}
+
+
+def _ios_backend(include_shutdown):
     xcrun = find_xcrun()
     if xcrun is None:
-        backends["ios"] = {"tool": None, "error": "unsupported: xcrun not found (needs macOS with Xcode)"}
-    else:
-        errors = []
-        if ios.has_devicectl(xcrun):
-            try:
-                devices += ios.list_physical(xcrun)
-            except ToolError as e:
-                errors.append(str(e))
-        else:
-            errors.append("devicectl not found (needs Xcode 15 or later); physical devices skipped")
+        return [], {"tool": None, "error": "unsupported: xcrun not found (needs macOS with Xcode)"}
+    devices, errors = [], []
+    if ios.has_devicectl(xcrun):
         try:
-            devices += ios.list_simulators(xcrun, include_shutdown)
+            devices += ios.list_physical(xcrun)
         except ToolError as e:
             errors.append(str(e))
-        backends["ios"] = {"tool": xcrun, "error": "; ".join(errors) or None}
+    else:
+        errors.append("devicectl not found (needs Xcode 15 or later); physical devices skipped")
+    try:
+        devices += ios.list_simulators(xcrun, include_shutdown)
+    except ToolError as e:
+        errors.append(str(e))
+    return devices, {"tool": xcrun, "error": "; ".join(errors) or None}
+
+
+def inventory(include_shutdown=False, platforms=("android", "ios")):
+    """Devices from the requested backends, plus a status entry per backend."""
+    devices, backends = [], {}
+    if "android" in platforms:
+        found, backends["android"] = _android_backend()
+        devices += found
+    if "ios" in platforms:
+        found, backends["ios"] = _ios_backend(include_shutdown)
+        devices += found
     return devices, backends
 
 
@@ -194,6 +204,104 @@ def cmd_inspect(args):
     return OK
 
 
+def _summary(records, as_json):
+    counts = {k: sum(r["result"] == k for r in records) for k in ("ok", "skipped", "failed")}
+    if as_json:
+        json.dump({"results": records, **counts}, sys.stdout, indent=2)
+        print()
+    else:
+        print(f"{counts['ok']} ok, {counts['skipped']} skipped, {counts['failed']} failed")
+    return OK if counts["ok"] == len(records) else PARTIAL
+
+
+def _print_record(rec):
+    label = " ".join(x for x in (rec["id"], rec["name"]) if x)
+    detail = f"{rec['stage']}: {rec['reason']}" if rec["reason"] else rec["stage"]
+    print(f"{rec['result']:8} {safe(label)}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
+
+
+def _targets(args, cfg, platform):
+    """Selected ready-or-not devices of one platform, or an exit code."""
+    devices, backends = inventory(platforms=(platform,))
+    b = backends[platform]
+    if b["tool"] is None:
+        print(f"devdrop: {safe(b['error'])}", file=sys.stderr)
+        return NO_TOOLS
+    if b["error"]:
+        print(f"devdrop: {platform}: {safe(b['error'])}", file=sys.stderr)
+    for d in devices:
+        d.name = _name(cfg, d)
+    try:
+        chosen = select(devices, args.to, cfg)
+    except SelectorError as e:
+        print(f"devdrop: {e}", file=sys.stderr)
+        return USAGE
+    if not chosen:
+        print(f"devdrop: no {platform} device matches --to {safe(args.to)}", file=sys.stderr)
+        return NO_DEVICES
+    return chosen, b["tool"]
+
+
+def _backend(platform, tool):
+    if platform == "android":
+        return deploy.Android(tool)
+    return None
+
+
+def cmd_install(args):
+    cfg = _load_config(args)
+    if cfg is None:
+        return USAGE
+    try:
+        report = artifact.inspect(args.path)
+    except artifact.ArtifactError as e:
+        print(f"devdrop: {safe(e)}", file=sys.stderr)
+        return USAGE
+    if report["platform"] == "ios":
+        print("devdrop: installing iOS builds is not supported yet", file=sys.stderr)
+        return USAGE
+    found = _targets(args, cfg, report["platform"])
+    if isinstance(found, int):
+        return found
+    chosen, tool = found
+    backend = _backend(report["platform"], tool)
+    records = deploy.fan_out(
+        chosen, lambda d: deploy.install_one(backend, d, report, args.clean, args.launch),
+        args.jobs, None if args.json else _print_record)
+    return _summary(records, args.json)
+
+
+def cmd_by_id(args):
+    cfg = _load_config(args)
+    if cfg is None:
+        return USAGE
+    found = _targets(args, cfg, "android")
+    if isinstance(found, int):
+        return found
+    chosen, tool = found
+    backend = _backend("android", tool)
+    records = deploy.fan_out(
+        chosen, lambda d: deploy.by_id_one(args.command, backend, d, args.app_id),
+        args.jobs, None if args.json else _print_record)
+    return _summary(records, args.json)
+
+
+def _positive(text):
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return n
+
+
+def _target_args(p):
+    p.add_argument("--to", default="all", metavar="SEL",
+                   help="devices to act on: all (default), android, ios, physical, emulator, "
+                        "simulator, api>=N, ios>=X, an alias or group, an id, or a model pattern; "
+                        "comma-separated terms are combined")
+    p.add_argument("--jobs", type=_positive, metavar="N", help="devices handled at once (default: up to 8)")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="devdrop",
                                 description="Install one mobile build on every attached Android and iOS device.")
@@ -209,6 +317,17 @@ def build_parser():
     i.add_argument("path")
     i.add_argument("--json", action="store_true", help="machine-readable output")
     i.set_defaults(func=cmd_inspect)
+    ins = sub.add_parser("install", help="install a build on every selected device")
+    ins.add_argument("path")
+    ins.add_argument("--launch", action="store_true", help="start the app after installing")
+    ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
+    _target_args(ins)
+    ins.set_defaults(func=cmd_install)
+    for name, text in (("launch", "start an installed app"), ("uninstall", "remove an app")):
+        c = sub.add_parser(name, help=f"{text} on every selected device")
+        c.add_argument("app_id", help="Android package name")
+        _target_args(c)
+        c.set_defaults(func=cmd_by_id)
     doc = sub.add_parser("doctor", help="check the toolchain and each device's state")
     doc.set_defaults(func=cmd_doctor)
     return p

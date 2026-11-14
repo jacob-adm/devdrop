@@ -7,8 +7,8 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: early development. `devices`, `doctor` and `inspect` work;
-`install`, `launch` and `uninstall` are next.
+Status: early development. All commands work for Android; installing
+on iOS devices and simulators is next.
 
 ## Requirements
 
@@ -27,7 +27,20 @@ Either platform works without the other.
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .ipa or .app contains
+devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
+devdrop launch APP_ID [--to SEL] [--jobs N] [--json]
+devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 ```
+
+`install` sends the build to every selected device at once. Before
+touching a device it checks that the build can go there and skips the
+device with a plain reason if not: the device is not ready, its API
+level is below the app's minSdk, the build has no native code for its
+CPU, or the APK is unsigned. Install failures from the device are
+translated too (for example a signing-key clash says to use `--clean`).
+`--clean` uninstalls the app first, which also removes its data;
+`--launch` starts it afterwards. Each device's result prints as it
+finishes, followed by a count.
 
 `inspect` reads the build directly, without the platform tools:
 
@@ -43,6 +56,22 @@ devdrop inspect PATH [--json]      show what an .apk, .ipa or .app contains
 emulator, simulator), model, OS version and state. Only `ready` devices
 take installs; any other state names what needs doing, and `doctor` gives
 the fix. Simulators are listed when booted; `--all` adds shut-down ones.
+
+## Choosing devices
+
+`--to` takes comma-separated terms; a device is chosen if any term
+matches. The default is `all`.
+
+| Term | Chooses |
+|---|---|
+| `all` | every device |
+| `android`, `ios` | one platform |
+| `physical`, `emulator`, `simulator` (`sim`) | one kind |
+| `api>=30`, `api<24`, ... | Android API level (`>=` `<=` `>` `<` `=`) |
+| `ios>=18`, `ios=26.1`, ... | iOS version |
+| `pixel8`, `lab` | an alias or group from `devdrop.toml` |
+| `emulator-5554` | a device id |
+| `'Pixel*'`, `'*ipad*'` | model or name pattern (case-insensitive) |
 
 ## Device names
 
@@ -64,9 +93,10 @@ lab = ["pixel8", "iphone"]
 | Code | Meaning |
 |---|---|
 | 0 | success |
-| 1 | a platform tool failed, or `doctor` found something to fix |
+| 1 | a device was skipped or failed, a platform tool failed, or `doctor` found something to fix |
 | 2 | usage or configuration error, or a build devdrop cannot read |
-| 4 | neither `adb` nor `xcrun` was found |
+| 3 | no device matched `--to` |
+| 4 | the platform tools needed were not found |
 
 ## License
 
