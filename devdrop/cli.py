@@ -3,11 +3,13 @@
 
 import argparse
 import json
+import os
 import sys
 import tempfile
+import time
 import zipfile
 
-from devdrop import __version__, android, artifact, config, deploy, ios
+from devdrop import __version__, android, artifact, config, deploy, ios, virtual
 from devdrop.select import SelectorError, select
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
@@ -30,14 +32,24 @@ def safe(text):
     return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in str(text))
 
 
-def _android_backend():
+def _android_backend(include_shutdown=False):
     adb = find_adb()
     if adb is None:
         return [], {"tool": None, "error": "adb not found (install Android SDK platform-tools)"}
     try:
-        return android.list_devices(adb), {"tool": adb, "error": None}
+        devices = android.list_devices(adb)
     except ToolError as e:
         return [], {"tool": adb, "error": str(e)}
+    error = None
+    if include_shutdown:
+        emulator = virtual.find_emulator()
+        if emulator:
+            running = {d.name for d in devices if d.kind == "emulator"}
+            try:
+                devices += virtual.stopped_avds(emulator, running)
+            except ToolError as e:
+                error = str(e)
+    return devices, {"tool": adb, "error": error}
 
 
 def _ios_backend(include_shutdown):
@@ -63,7 +75,7 @@ def inventory(include_shutdown=False, platforms=("android", "ios")):
     """Devices from the requested backends, plus a status entry per backend."""
     devices, backends = [], {}
     if "android" in platforms:
-        found, backends["android"] = _android_backend()
+        found, backends["android"] = _android_backend(include_shutdown)
         devices += found
     if "ios" in platforms:
         found, backends["ios"] = _ios_backend(include_shutdown)
@@ -99,7 +111,7 @@ def cmd_devices(args):
     else:
         rows = [("ID", "NAME", "PLATFORM", "KIND", "MODEL", "OS", "STATE")]
         for d in devices:
-            os_text = d.os_version + (f" (API {d.api})" if d.api else "")
+            os_text = " ".join(x for x in (d.os_version, f"(API {d.api})" if d.api else "") if x)
             rows.append((d.id, d.name, d.platform, d.kind, d.model, os_text, d.state))
         if devices:
             widths = [max(len(safe(r[i])) for r in rows) for i in range(len(rows[0]))]
@@ -249,6 +261,85 @@ def _backend(platform, tool):
     return deploy.Android(tool) if platform == "android" else deploy.Ios(tool)
 
 
+def _boot_one(adb, xcrun, dev, timeout, show):
+    started = time.monotonic()
+    try:
+        if dev.platform == "android":
+            emulator = virtual.find_emulator()
+            if emulator is None:
+                raise ToolError("emulator not found (install the Android SDK emulator package)")
+            log_path = os.path.join(tempfile.gettempdir(), f"devdrop-emulator-{dev.name}.log")
+            proc = virtual.start_avd(emulator, dev.name, log_path, show)
+            serial = virtual.wait_for_avd(adb, dev.name, timeout, lambda: android.list_devices(adb),
+                                          proc, log_path)
+            reason = f"running as {serial}"
+        else:
+            virtual.boot_simulator(xcrun, dev.id, timeout, show)
+            reason = ""
+    except ToolError as e:
+        return deploy.record(dev, "failed", "boot", str(e), started)
+    return deploy.record(dev, "ok", "boot", reason, started)
+
+
+def _boot(args, cfg, platforms):
+    """Boot the stopped virtual devices --to names. Returns (records, exit code or None)."""
+    devices, backends = inventory(include_shutdown=True, platforms=platforms)
+    for d in devices:
+        d.name = d.name if d.kind == "emulator" and d.state == "shutdown" else _name(cfg, d)
+    try:
+        chosen = select(devices, args.to, cfg)
+    except SelectorError as e:
+        print(f"devdrop: {e}", file=sys.stderr)
+        return [], USAGE
+    stopped = [d for d in chosen if d.state == "shutdown" and d.kind in ("emulator", "simulator")]
+    if not chosen:
+        print(f"devdrop: no device matches --to {safe(args.to)}", file=sys.stderr)
+        return [], NO_DEVICES
+    adb = (backends.get("android") or {}).get("tool")
+    xcrun = (backends.get("ios") or {}).get("tool")
+    records = deploy.fan_out(stopped, lambda d: _boot_one(adb, xcrun, d, args.boot_timeout, args.show),
+                             args.jobs, None if args.json else _print_record)
+    return records, None
+
+
+def cmd_boot(args):
+    cfg = _load_config(args)
+    if cfg is None:
+        return USAGE
+    records, code = _boot(args, cfg, ("android", "ios"))
+    if code is not None:
+        return code
+    if not records and not args.json:
+        print("nothing to boot: every matching device is already running")
+    return _summary(records, args.json)
+
+
+def cmd_shutdown(args):
+    cfg = _load_config(args)
+    if cfg is None:
+        return USAGE
+    found = _targets(args, cfg, ("android", "ios"))
+    if isinstance(found, int):
+        return found
+    chosen, backends = found
+    virtual_devs = [d for d in chosen if d.kind in ("emulator", "simulator")]
+    if not virtual_devs:
+        print("devdrop: --to matches no running emulator or simulator", file=sys.stderr)
+        return NO_DEVICES
+    adb = backends["android"].adb if "android" in backends else None
+    xcrun = backends["ios"].xcrun if "ios" in backends else None
+
+    def stop(dev):
+        started = time.monotonic()
+        try:
+            virtual.shutdown(adb, xcrun, dev)
+        except ToolError as e:
+            return deploy.record(dev, "failed", "shutdown", str(e), started)
+        return deploy.record(dev, "ok", "shutdown", "", started)
+    records = deploy.fan_out(virtual_devs, stop, args.jobs, None if args.json else _print_record)
+    return _summary(records, args.json)
+
+
 def cmd_install(args):
     cfg = _load_config(args)
     if cfg is None:
@@ -258,6 +349,11 @@ def cmd_install(args):
     except artifact.ArtifactError as e:
         print(f"devdrop: {safe(e)}", file=sys.stderr)
         return USAGE
+    booted = []
+    if args.boot:
+        booted, code = _boot(args, cfg, (report["platform"],))
+        if code is not None:
+            return code
     found = _targets(args, cfg, (report["platform"],))
     if isinstance(found, int):
         return found
@@ -273,7 +369,7 @@ def cmd_install(args):
         records = deploy.fan_out(
             chosen, lambda d: deploy.install_one(backend, d, report, args.clean, args.launch),
             args.jobs, None if args.json else _print_record)
-    return _summary(records, args.json)
+    return _summary([r for r in booted if r["result"] != "ok"] + records, args.json)
 
 
 def cmd_by_id(args):
@@ -298,8 +394,16 @@ def _positive(text):
     return n
 
 
-def _target_args(p):
-    p.add_argument("--to", default="all", metavar="SEL",
+def _boot_args(p, flag_help):
+    if flag_help:
+        p.add_argument("--boot", action="store_true", help=flag_help)
+    p.add_argument("--show", action="store_true", help="show emulator and Simulator windows when booting")
+    p.add_argument("--boot-timeout", type=_positive, default=300, metavar="SECONDS",
+                   help="how long to wait for each device to boot (default 300)")
+
+
+def _target_args(p, default="all"):
+    p.add_argument("--to", default=default, metavar="SEL",
                    help="devices to act on: all (default), android, ios, physical, emulator, "
                         "simulator, api>=N, ios>=X, an alias or group, an id, or a model pattern; "
                         "comma-separated terms are combined")
@@ -316,7 +420,8 @@ def build_parser():
     sub = p.add_subparsers(dest="command", required=True)
     d = sub.add_parser("devices", help="list attached Android and iOS devices")
     d.add_argument("--json", action="store_true", help="machine-readable output")
-    d.add_argument("--all", action="store_true", help="include simulators that are shut down")
+    d.add_argument("--all", action="store_true",
+                   help="include stopped Android virtual devices and shut-down simulators")
     d.set_defaults(func=cmd_devices)
     i = sub.add_parser("inspect", help="show what an .apk, .ipa or .app contains")
     i.add_argument("path")
@@ -327,19 +432,30 @@ def build_parser():
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
     _target_args(ins)
+    _boot_args(ins, "start stopped emulators and simulators that --to names, then install")
     ins.set_defaults(func=cmd_install)
     for name, text in (("launch", "start an installed app"), ("uninstall", "remove an app")):
         c = sub.add_parser(name, help=f"{text} on every selected device")
         c.add_argument("app_id", help="Android package name or iOS bundle id")
         _target_args(c)
         c.set_defaults(func=cmd_by_id)
+    bt = sub.add_parser("boot", help="start stopped emulators and simulators and wait until booted")
+    _target_args(bt, default=None)
+    _boot_args(bt, None)
+    bt.set_defaults(func=cmd_boot)
+    sd = sub.add_parser("shutdown", help="stop running emulators and simulators (never physical devices)")
+    _target_args(sd)
+    sd.set_defaults(func=cmd_shutdown)
     doc = sub.add_parser("doctor", help="check the toolchain and each device's state")
     doc.set_defaults(func=cmd_doctor)
     return p
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if (args.command == "boot" or getattr(args, "boot", False)) and args.to in (None, "all"):
+        parser.error("booting needs an explicit --to (for example --to 'Pixel*' or --to sim)")
     try:
         return args.func(args)
     except KeyboardInterrupt:

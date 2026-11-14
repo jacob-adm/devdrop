@@ -66,6 +66,8 @@ def _apply_props(dev, props):
     dev.abis = [a for a in props.get("ro.product.cpu.abilist", "").split(",") if a]
     if props.get("ro.kernel.qemu") == "1" or props.get("ro.boot.qemu") == "1":
         dev.kind = "emulator"
+    if dev.kind == "emulator":
+        dev.name = props.get("ro.boot.qemu.avd_name") or props.get("ro.kernel.qemu.avd_name") or dev.name
 
 
 def list_devices(adb):

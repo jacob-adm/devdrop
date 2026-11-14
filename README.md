@@ -29,6 +29,8 @@ devdrop inspect PATH [--json]      show what an .apk, .ipa or .app contains
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
 devdrop launch APP_ID [--to SEL] [--jobs N] [--json]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
+devdrop boot --to SEL [--show] [--boot-timeout S] [--json]
+devdrop shutdown [--to SEL] [--json]
 ```
 
 `install` sends the build to every selected device at once. Before
@@ -48,6 +50,21 @@ iOS devices are driven with `xcrun devicectl` and simulators with
 `xcrun simctl`; an `.ipa` is unpacked to its `.app` first. Only booted
 simulators are targets. `launch` and `uninstall` take an Android package
 name or an iOS bundle id and act on every selected device.
+
+## Emulators and simulators
+
+Running Android emulators and booted iOS simulators are targets like any
+other device (`--to emulator`, `--to sim`). `devices --all` also lists
+stopped Android virtual devices (with the API level from their config)
+and shut-down simulators.
+
+`boot --to SEL` starts the stopped ones that `SEL` names and waits until
+each has finished booting; `install --boot --to SEL` does the same before
+installing. Emulators start without a window and keep running after
+devdrop exits; `--show` opens their windows (and Simulator.app). Booting
+always needs an explicit `--to`, so a default run never starts every
+simulator on the machine. `shutdown` stops running emulators and
+simulators and never touches physical devices.
 
 `inspect` reads the build directly, without the platform tools:
 
@@ -77,7 +94,7 @@ matches. The default is `all`.
 | `api>=30`, `api<24`, ... | Android API level (`>=` `<=` `>` `<` `=`) |
 | `ios>=18`, `ios=26.1`, ... | iOS version |
 | `pixel8`, `lab` | an alias or group from `devdrop.toml` |
-| `emulator-5554` | a device id |
+| `emulator-5554`, `"iPhone 16 Pro"` | a device id, or an exact model or name |
 | `'Pixel*'`, `'*ipad*'` | model or name pattern (case-insensitive) |
 
 ## Device names
