@@ -94,12 +94,68 @@ def _launcher(app):
     return ""
 
 
+PAGE_16K = 16384
+ABIS_64 = ("arm64-v8a", "x86_64")
+
+
+def elf_load_align(data):
+    """Smallest PT_LOAD alignment of a 64-bit little-endian ELF, or None if not one."""
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+        return None
+    phoff = struct.unpack_from("<Q", data, 0x20)[0]
+    entsize, count = struct.unpack_from("<HH", data, 0x36)
+    aligns = []
+    for i in range(count):
+        at = phoff + i * entsize
+        if at + 56 > len(data):
+            break
+        if struct.unpack_from("<I", data, at)[0] == 1:          # PT_LOAD
+            aligns.append(struct.unpack_from("<Q", data, at + 0x30)[0])
+    return min(aligns) if aligns else None
+
+
+def _data_offset(f, info):
+    """Where an entry's data starts: after its local header, whose extra field
+    can differ in length from the central directory's copy."""
+    f.seek(info.header_offset)
+    header = f.read(30)
+    if len(header) < 30 or header[:4] != b"PK\x03\x04":
+        return None
+    name_len, extra_len = struct.unpack_from("<HH", header, 26)
+    return info.header_offset + 30 + name_len + extra_len
+
+
+def _page_16k(path, z):
+    """16 KB page-size readiness of the 64-bit native libraries in an APK.
+
+    A library is ready when every LOAD segment is aligned to 16 KB and, if it is
+    stored uncompressed (loaded in place), its data starts on a 16 KB boundary.
+    """
+    libs = []
+    with open(path, "rb") as f:
+        for info in z.infolist():
+            parts = info.filename.split("/")
+            if len(parts) != 3 or parts[0] != "lib" or parts[1] not in ABIS_64 or not parts[2].endswith(".so"):
+                continue
+            align = elf_load_align(z.read(info))
+            stored = info.compress_type == zipfile.ZIP_STORED
+            zip_ok = None
+            if stored:
+                offset = _data_offset(f, info)
+                zip_ok = offset is not None and offset % PAGE_16K == 0
+            libs.append({"path": info.filename, "elf_align": align, "stored": stored,
+                         "zip_aligned_16k": zip_ok,
+                         "ready": align is not None and align >= PAGE_16K and zip_ok is not False})
+    return {"native_64bit": bool(libs), "ready": all(x["ready"] for x in libs), "libraries": libs}
+
+
 def _apk(path):
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
         if "AndroidManifest.xml" not in names:
             raise ArtifactError(f"{path}: no AndroidManifest.xml (not an APK)")
         root = axml.parse(z.read("AndroidManifest.xml"))
+        page_16k = _page_16k(path, z)
     if root.tag != "manifest":
         raise ArtifactError(f"{path}: AndroidManifest.xml root is <{root.tag}>, not <manifest>")
     sdk = next(root.find_all("uses-sdk"), None)
@@ -127,6 +183,8 @@ def _apk(path):
         "launcher": launcher,
         "split": str(root.attrs.get("split", "")),
         "signing": _apk_signing(path, names),
+        "page_16k": page_16k,
+        "page_size_compat": _text(app.attrs.get("pageSizeCompat", "")) if app else "",
     }
 
 

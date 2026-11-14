@@ -32,9 +32,17 @@ public class Main extends android.app.Activity {
 }
 """
 
+NATIVE_ACTIVITY = ACTIVITY.replace(
+    "public class Main extends android.app.Activity {",
+    "public class Main extends android.app.Activity {\n"
+    "    static { System.loadLibrary(\"e2e\"); }   // the app cannot start unless its native code loads")
+NATIVE_C = "int devdrop_e2e(void) { return 42; }\n"
+# name: (ELF page size, zipalign page flags) - arm64 library stored uncompressed and loaded in place
+NATIVE = {"app-native4k": (4096, ["-p"]), "app-native16k": (16384, ["-P", "16"])}
+
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}">
-  <application android:label="devdrop e2e" android:debuggable="{debuggable}" android:hasCode="true">
+  <application android:label="devdrop e2e" android:debuggable="{debuggable}" android:hasCode="true"{extract}>
     <activity android:name=".Main" android:exported="true">{main_filter}</activity>{aliases}
   </application>
 </manifest>
@@ -127,7 +135,7 @@ def build_android(out, work):
     for name, (code, min_sdk, key, extra) in ANDROID.items():
         manifest = os.path.join(work, f"{name}.xml")
         with open(manifest, "w") as f:
-            f.write(MANIFEST.format(package=PACKAGE, debuggable="true",
+            f.write(MANIFEST.format(package=PACKAGE, debuggable="true", extract="",
                                     main_filter="" if extra.get("alias") else LAUNCHER,
                                     aliases=ALIASES if extra.get("alias") else ""))
         raw = os.path.join(work, f"{name}.raw.apk")
@@ -147,6 +155,54 @@ def build_android(out, work):
         else:
             shutil.copy(aligned, dest)
         built[name] = {"path": dest, "version_code": code, "min_sdk": min_sdk, "key": key, **extra}
+    built.update(build_native(out, work, bt, jar))
+    return built
+
+
+def build_native(out, work, bt, jar):
+    """APKs whose app loads an arm64 library at start, aligned to 4 KB and to 16 KB."""
+    lld = os.path.join(bt, "lld-bin", "lld")
+    if shutil.which("xcrun") is None and shutil.which("clang") is None or not os.path.exists(lld):
+        print("android native: no clang or lld; skipped", file=sys.stderr)
+        return {}
+    clang = ["xcrun", "clang"] if shutil.which("xcrun") else ["clang"]
+    linker = os.path.join(work, "lldbin", "ld.lld")
+    os.makedirs(os.path.dirname(linker), exist_ok=True)
+    if not os.path.exists(linker):
+        os.symlink(lld, linker)                # lld picks its flavour from the name it is run as
+    src = os.path.join(work, "native", "src", *PACKAGE.split("."))
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "Main.java"), "w") as f:
+        f.write(NATIVE_ACTIVITY)
+    with open(os.path.join(work, "native", "e2e.c"), "w") as f:
+        f.write(NATIVE_C)
+    classes = os.path.join(work, "native", "classes")
+    sh("javac", "--release", "11", "-classpath", jar, "-d", classes, os.path.join(src, "Main.java"))
+    class_files = [os.path.join(dp, n) for dp, _, ns in os.walk(classes) for n in ns if n.endswith(".class")]
+    dex_dir = os.path.join(work, "native")
+    sh(os.path.join(bt, "d8"), "--min-api", "23", "--lib", jar, "--output", dex_dir, *class_files)
+    manifest = os.path.join(work, "native", "AndroidManifest.xml")
+    with open(manifest, "w") as f:
+        f.write(MANIFEST.format(package=PACKAGE, debuggable="true", extract=' android:extractNativeLibs="false"',
+                                main_filter=LAUNCHER, aliases=""))
+    built = {}
+    for name, (page, zipalign_flags) in NATIVE.items():
+        so = os.path.join(work, "native", f"{name}.so")
+        sh(*clang, "--target=aarch64-linux-android23", "-nostdlib", "-shared", "-fPIC", f"-fuse-ld={linker}",
+           f"-Wl,-z,max-page-size={page}", "-o", so, os.path.join(work, "native", "e2e.c"))
+        raw = os.path.join(work, f"{name}.raw.apk")
+        sh(os.path.join(bt, "aapt2"), "link", "-o", raw, "-I", jar, "--manifest", manifest,
+           "--min-sdk-version", "23", "--target-sdk-version", "35", "--version-code", "1", "--version-name", "1.0.1")
+        with zipfile.ZipFile(raw, "a") as z:
+            z.write(os.path.join(dex_dir, "classes.dex"), "classes.dex", zipfile.ZIP_DEFLATED)
+            z.write(so, "lib/arm64-v8a/libe2e.so", zipfile.ZIP_STORED)
+        aligned = os.path.join(work, f"{name}.aligned.apk")
+        sh(os.path.join(bt, "zipalign"), "-f", *zipalign_flags, "4", raw, aligned)
+        dest = os.path.join(out, f"{name}.apk")
+        sh(os.path.join(bt, "apksigner"), "sign", "--ks", keystore(work, "a"), "--ks-pass", "pass:devdrop",
+           "--key-pass", "pass:devdrop", "--out", dest, aligned)
+        built[name] = {"path": dest, "version_code": 1, "min_sdk": 23, "key": "a", "abi": "arm64-v8a",
+                       "elf_page": page}
     return built
 
 

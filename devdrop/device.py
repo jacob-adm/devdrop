@@ -19,6 +19,7 @@ class Device:
     os_version: str = ""
     api: int | None = None  # Android API level
     abis: list = field(default_factory=list)
+    page_size: int | None = None  # Android: memory page size in bytes (16384 on 16 KB devices)
     transport: str = ""     # "usb" | "wifi" | "local" | ""
     name: str = ""          # alias from devdrop.toml, else the device's own name
 

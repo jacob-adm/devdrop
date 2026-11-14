@@ -66,3 +66,21 @@ def _ios(report, device):
     if not profile["all_devices"] and device.id not in profile["devices"]:
         return "UDID not in provisioning profile"
     return None
+
+
+def warnings(report, device):
+    """Things that will not stop the install but that the operator should know."""
+    page = report.get("page_16k") or {}
+    if device.platform != "android" or device.page_size != 16384 or page.get("ready", True):
+        return []
+    bad = [f"{lib['path']} ({_why(lib)})" for lib in page.get("libraries", []) if not lib["ready"]]
+    return ["16 KB page-size device: native code is not 16 KB ready, so the app runs in "
+            "page-size compatibility mode or may fail to load: " + ", ".join(bad)]
+
+
+def _why(lib):
+    if lib["elf_align"] is None:
+        return "not a readable 64-bit ELF"
+    if lib["elf_align"] < 16384:
+        return f"ELF aligned to {lib['elf_align'] // 1024} KB"
+    return "not on a 16 KB boundary in the APK"
