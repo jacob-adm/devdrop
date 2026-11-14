@@ -1,0 +1,375 @@
+{
+ "info": {
+  "arguments": [
+   "devicectl",
+   "list",
+   "devices",
+   "--json-output",
+   "out.json",
+   "-q"
+  ],
+  "commandType": "devicectl.list.devices",
+  "environment": {},
+  "jsonVersion": 3,
+  "outcome": "success",
+  "version": "506.6"
+ },
+ "result": {
+  "devices": [
+   {
+    "capabilities": [
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.tags",
+      "name": "Modify Tags"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+      "name": "Modify credentials for default users for a device"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+      "name": "Unpair Device"
+     }
+    ],
+    "connectionProperties": {
+     "authenticationType": "manualPairing",
+     "isMobileDeviceOnly": false,
+     "lastConnectionDate": "2026-01-01T00:00:00.000Z",
+     "pairingState": "paired",
+     "potentialHostnames": [
+      "Test-iPhone.coredevice.local"
+     ],
+     "tunnelState": "connected",
+     "transportType": "wired"
+    },
+    "deviceProperties": {
+     "ddiServicesAvailable": false,
+     "developerModeStatus": "enabled",
+     "hasInternalOSBuild": false,
+     "name": "Test iPhone",
+     "osBuildUpdate": "23F81",
+     "osVersionNumber": "26.5.1"
+    },
+    "hardwareProperties": {
+     "cpuType": {
+      "name": "arm64e",
+      "subType": 2,
+      "type": 16777228
+     },
+     "deviceType": "iPhone",
+     "ecid": 1,
+     "hardwareModel": "V54AP",
+     "isProductionFused": true,
+     "marketingName": "iPhone 17 Pro Max",
+     "platform": "iOS",
+     "productType": "iPhone18,2",
+     "reality": "physical",
+     "serialNumber": "TESTSERIAL1",
+     "supportedCPUTypes": [
+      {
+       "name": "arm64e",
+       "subType": 2,
+       "type": 16777228
+      },
+      {
+       "name": "arm64",
+       "subType": 0,
+       "type": 16777228
+      }
+     ],
+     "supportedDeviceFamilies": [
+      1
+     ],
+     "thinningProductType": "iPhone18,2",
+     "udid": "00008150-0000000000000001"
+    },
+    "identifier": "11111111-2222-3333-4444-555555555555",
+    "tags": [],
+    "visibilityClass": "default"
+   },
+   {
+    "capabilities": [
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.tags",
+      "name": "Modify Tags"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+      "name": "Modify credentials for default users for a device"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+      "name": "Unpair Device"
+     }
+    ],
+    "connectionProperties": {
+     "authenticationType": "manualPairing",
+     "isMobileDeviceOnly": false,
+     "lastConnectionDate": "2026-01-01T00:00:00.000Z",
+     "pairingState": "paired",
+     "potentialHostnames": [
+      "Test-iPhone.coredevice.local"
+     ],
+     "tunnelState": "unavailable"
+    },
+    "deviceProperties": {
+     "ddiServicesAvailable": false,
+     "developerModeStatus": "disabled",
+     "hasInternalOSBuild": false,
+     "name": "Test iPhone 2",
+     "osBuildUpdate": "23F81",
+     "osVersionNumber": "26.5.1"
+    },
+    "hardwareProperties": {
+     "cpuType": {
+      "name": "arm64e",
+      "subType": 2,
+      "type": 16777228
+     },
+     "deviceType": "iPhone",
+     "ecid": 1,
+     "hardwareModel": "V54AP",
+     "isProductionFused": true,
+     "marketingName": "iPhone 17 Pro Max",
+     "platform": "iOS",
+     "productType": "iPhone18,2",
+     "reality": "physical",
+     "serialNumber": "TESTSERIAL1",
+     "supportedCPUTypes": [
+      {
+       "name": "arm64e",
+       "subType": 2,
+       "type": 16777228
+      },
+      {
+       "name": "arm64",
+       "subType": 0,
+       "type": 16777228
+      }
+     ],
+     "supportedDeviceFamilies": [
+      1
+     ],
+     "thinningProductType": "iPhone18,2",
+     "udid": "00008150-0000000000000002"
+    },
+    "identifier": "11111111-2222-3333-4444-555555555555",
+    "tags": [],
+    "visibilityClass": "default"
+   },
+   {
+    "capabilities": [
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.tags",
+      "name": "Modify Tags"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+      "name": "Modify credentials for default users for a device"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+      "name": "Unpair Device"
+     }
+    ],
+    "connectionProperties": {
+     "authenticationType": "manualPairing",
+     "isMobileDeviceOnly": false,
+     "lastConnectionDate": "2026-01-01T00:00:00.000Z",
+     "pairingState": "paired",
+     "potentialHostnames": [
+      "Test-iPhone.coredevice.local"
+     ],
+     "tunnelState": "connected",
+     "transportType": "localNetwork"
+    },
+    "deviceProperties": {
+     "ddiServicesAvailable": false,
+     "developerModeStatus": "disabled",
+     "hasInternalOSBuild": false,
+     "name": "Test iPhone",
+     "osBuildUpdate": "23F81",
+     "osVersionNumber": "26.5.1"
+    },
+    "hardwareProperties": {
+     "cpuType": {
+      "name": "arm64e",
+      "subType": 2,
+      "type": 16777228
+     },
+     "deviceType": "iPad",
+     "ecid": 1,
+     "hardwareModel": "V54AP",
+     "isProductionFused": true,
+     "marketingName": "iPad Air",
+     "platform": "iOS",
+     "productType": "iPhone18,2",
+     "reality": "physical",
+     "serialNumber": "TESTSERIAL1",
+     "supportedCPUTypes": [
+      {
+       "name": "arm64e",
+       "subType": 2,
+       "type": 16777228
+      },
+      {
+       "name": "arm64",
+       "subType": 0,
+       "type": 16777228
+      }
+     ],
+     "supportedDeviceFamilies": [
+      1
+     ],
+     "thinningProductType": "iPhone18,2",
+     "udid": "00008150-0000000000000003"
+    },
+    "identifier": "11111111-2222-3333-4444-555555555555",
+    "tags": [],
+    "visibilityClass": "default"
+   },
+   {
+    "capabilities": [
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.tags",
+      "name": "Modify Tags"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+      "name": "Modify credentials for default users for a device"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+      "name": "Unpair Device"
+     }
+    ],
+    "connectionProperties": {
+     "authenticationType": "manualPairing",
+     "isMobileDeviceOnly": false,
+     "lastConnectionDate": "2026-01-01T00:00:00.000Z",
+     "pairingState": "unpaired",
+     "potentialHostnames": [
+      "Test-iPhone.coredevice.local"
+     ],
+     "tunnelState": "connected",
+     "transportType": "wired"
+    },
+    "deviceProperties": {
+     "ddiServicesAvailable": false,
+     "developerModeStatus": "enabled",
+     "hasInternalOSBuild": false,
+     "name": "Test iPhone",
+     "osBuildUpdate": "23F81",
+     "osVersionNumber": "26.5.1"
+    },
+    "hardwareProperties": {
+     "cpuType": {
+      "name": "arm64e",
+      "subType": 2,
+      "type": 16777228
+     },
+     "deviceType": "iPhone",
+     "ecid": 1,
+     "hardwareModel": "V54AP",
+     "isProductionFused": true,
+     "marketingName": "iPhone 17 Pro Max",
+     "platform": "iOS",
+     "productType": "iPhone18,2",
+     "reality": "physical",
+     "serialNumber": "TESTSERIAL1",
+     "supportedCPUTypes": [
+      {
+       "name": "arm64e",
+       "subType": 2,
+       "type": 16777228
+      },
+      {
+       "name": "arm64",
+       "subType": 0,
+       "type": 16777228
+      }
+     ],
+     "supportedDeviceFamilies": [
+      1
+     ],
+     "thinningProductType": "iPhone18,2",
+     "udid": "00008150-0000000000000004"
+    },
+    "identifier": "11111111-2222-3333-4444-555555555555",
+    "tags": [],
+    "visibilityClass": "default"
+   },
+   {
+    "capabilities": [
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.tags",
+      "name": "Modify Tags"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.default.user.credentials",
+      "name": "Modify credentials for default users for a device"
+     },
+     {
+      "featureIdentifier": "com.apple.coredevice.feature.unpairdevice",
+      "name": "Unpair Device"
+     }
+    ],
+    "connectionProperties": {
+     "authenticationType": "manualPairing",
+     "isMobileDeviceOnly": false,
+     "lastConnectionDate": "2026-01-01T00:00:00.000Z",
+     "pairingState": "paired",
+     "potentialHostnames": [
+      "Test-iPhone.coredevice.local"
+     ],
+     "tunnelState": "connected",
+     "transportType": "wired"
+    },
+    "deviceProperties": {
+     "ddiServicesAvailable": false,
+     "developerModeStatus": "enabled",
+     "hasInternalOSBuild": false,
+     "name": "Test iPhone",
+     "osBuildUpdate": "23F81",
+     "osVersionNumber": "26.5.1"
+    },
+    "hardwareProperties": {
+     "cpuType": {
+      "name": "arm64e",
+      "subType": 2,
+      "type": 16777228
+     },
+     "deviceType": "iPhone",
+     "ecid": 1,
+     "hardwareModel": "V54AP",
+     "isProductionFused": true,
+     "marketingName": "iPhone 17 Pro Max",
+     "platform": "watchOS",
+     "productType": "iPhone18,2",
+     "reality": "physical",
+     "serialNumber": "TESTSERIAL1",
+     "supportedCPUTypes": [
+      {
+       "name": "arm64e",
+       "subType": 2,
+       "type": 16777228
+      },
+      {
+       "name": "arm64",
+       "subType": 0,
+       "type": 16777228
+      }
+     ],
+     "supportedDeviceFamilies": [
+      1
+     ],
+     "thinningProductType": "iPhone18,2",
+     "udid": "00008310-0000000000000005"
+    },
+    "identifier": "11111111-2222-3333-4444-555555555555",
+    "tags": [],
+    "visibilityClass": "default"
+   }
+  ]
+ }
+}

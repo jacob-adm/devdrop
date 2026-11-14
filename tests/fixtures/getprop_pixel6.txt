@@ -1,0 +1,4 @@
+[ro.build.version.release]: [13]
+[ro.build.version.sdk]: [33]
+[ro.product.cpu.abilist]: [arm64-v8a,armeabi-v7a,armeabi]
+[ro.product.model]: [Pixel 6]

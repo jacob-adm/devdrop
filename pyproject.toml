@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devdrop"
+version = "0.1.0.dev0"
+description = "Install one mobile build on every attached Android and iOS device."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = []
+keywords = ["android", "ios", "mobile", "adb", "devicectl", "simctl", "deploy", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.scripts]
+devdrop = "devdrop.cli:main"
+
+[tool.setuptools]
+packages = ["devdrop"]
