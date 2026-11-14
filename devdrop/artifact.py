@@ -267,6 +267,7 @@ def _ios_report(kind, path, info, profile):
         "platform": "ios",
         "path": path,
         "id": _text(info.get("CFBundleIdentifier", "")),
+        "executable": _text(info.get("CFBundleExecutable", "")),
         "version": _text(info.get("CFBundleShortVersionString", "")),
         "build": _text(info.get("CFBundleVersion", "")),
         "min_os": _text(info.get("MinimumOSVersion", "")),

@@ -414,6 +414,35 @@ class C_Ios(unittest.TestCase):
         self.assertEqual(rc, 1)
 
 
+class F_LaunchLogs(unittest.TestCase):
+    def test_crash_on_launch_is_reported_with_its_log(self):
+        logs = tempfile.mkdtemp(prefix="devdrop-e2e-logs-")
+        try:
+            # The matrix boots ten emulators at once; old ones start apps slowly under that load.
+            rc, out, _ = devdrop("install", apk("app-crash"), "--to", S["android"], "--clean", "--launch",
+                                 "--logs", logs, "--log-seconds", "15", "--json")
+            self.assertEqual(rc, 1)
+            for rec in out["results"]:
+                with self.subTest(device=rec["id"], api=rec["api"]):
+                    self.assertEqual((rec["result"], rec["stage"], rec["running"]), ("failed", "running", False))
+                    self.assertIn("devdrop e2e crash", rec["reason"])
+                    with open(rec["log"]) as f:
+                        self.assertIn("FATAL EXCEPTION", f.read())
+            rc, out, _ = devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--launch",
+                                 "--logs", logs, "--json")
+            self.assertEqual(rc, 0, out)
+            self.assertEqual({r["running"] for r in out["results"]}, {True})
+            if sys.platform == "darwin" and S["sims"] and "ios-sim-crash" in S["fx"]["ios"]:
+                rc, out, _ = devdrop("install", ios("ios-sim-crash"), "--to", ",".join(S["sims"]), "--clean",
+                                     "--launch", "--logs", logs, "--json")
+                for rec in out["results"]:
+                    with self.subTest(device=rec["id"], ios=rec["os_version"]):
+                        self.assertEqual((rec["result"], rec["running"]), ("failed", False))
+                        self.assertIn("Fatal error: devdrop e2e crash", rec["reason"])
+        finally:
+            shutil.rmtree(logs, ignore_errors=True)
+
+
 class E_WirelessAndWatch(unittest.TestCase):
     def test_1_tcp_connection_is_not_a_second_device(self):
         serial = next(iter(S["serials"].values()))

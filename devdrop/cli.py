@@ -249,6 +249,8 @@ def _print_record(rec):
     print(f"{rec['result']:8} {safe(label)}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
     for note in rec.get("warnings", []):
         print(f"{'':8} warning: {safe(note)}", flush=True)
+    if rec.get("log"):
+        print(f"{'':8} log: {safe(rec['log'])}", flush=True)
 
 
 WATCH_POLL = 2.0
@@ -374,6 +376,10 @@ def cmd_install(args):
         booted, code = _boot(args, cfg, (report["platform"],))
         if code is not None:
             return code
+    if args.logs and not args.launch:
+        print("devdrop: --logs needs --launch", file=sys.stderr)
+        return USAGE
+    log = _launch_log(args)
     found = _targets(args, cfg, (report["platform"],), allow_empty=args.watch)
     if isinstance(found, int):
         return found
@@ -394,7 +400,7 @@ def cmd_install(args):
                 print(f"devdrop: {safe(args.path)}: {safe(e)}", file=sys.stderr)
                 return USAGE
         def work(dev):
-            return deploy.install_one(backend, dev, report, args.clean, args.launch)
+            return deploy.install_one(backend, dev, report, args.clean, args.launch, log)
         records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
         if args.watch:
             records += _watch(args, cfg, report["platform"], {r["id"] for r in records}, work)
@@ -470,10 +476,25 @@ def cmd_by_id(args):
         return found
     chosen, backends = found
     chosen = [d for d in chosen if d.platform in backends]
+    log = _launch_log(args) if args.command == "launch" else None
     records = deploy.fan_out(
-        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id),
+        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log),
         args.jobs, None if args.json else _print_record)
     return _summary(records, args.json)
+
+
+def _launch_log(args):
+    if not getattr(args, "logs", None):
+        return None
+    os.makedirs(args.logs, exist_ok=True)
+    return deploy.LaunchLog(args.logs, args.log_seconds)
+
+
+def _log_args(p):
+    p.add_argument("--logs", metavar="DIR",
+                   help="after launching, watch the app and save each device's log to DIR/<device>.log")
+    p.add_argument("--log-seconds", type=_positive, default=5, metavar="N",
+                   help="how long to watch after launch (default 5)")
 
 
 def _positive(text):
@@ -520,6 +541,7 @@ def build_parser():
     ins.add_argument("path")
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
+    _log_args(ins)
     ins.add_argument("--watch", action="store_true",
                      help="keep running: install on each matching device as it connects (Ctrl-C to stop)")
     ins.add_argument("--watch-timeout", type=_positive, metavar="SECONDS",
@@ -534,6 +556,8 @@ def build_parser():
         c = sub.add_parser(name, help=f"{text} on every selected device")
         c.add_argument("app_id", help="Android package name or iOS bundle id")
         _target_args(c)
+        if name == "launch":
+            _log_args(c)
         c.set_defaults(func=cmd_by_id)
     pr = sub.add_parser("pair", help="pair with an Android device over Wi-Fi (adb pair)")
     pr.add_argument("address", help="HOST:PORT shown under Wireless debugging > Pair with pairing code")

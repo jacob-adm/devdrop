@@ -32,6 +32,8 @@ public class Main extends android.app.Activity {
 }
 """
 
+CRASH_ACTIVITY = ACTIVITY.replace("super.onCreate(b);",
+                                  'super.onCreate(b);\n        if (true) throw new RuntimeException("devdrop e2e crash");')
 NATIVE_ACTIVITY = ACTIVITY.replace(
     "public class Main extends android.app.Activity {",
     "public class Main extends android.app.Activity {\n"
@@ -79,11 +81,14 @@ class Delegate: UIResponder, UIApplicationDelegate {
 UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(Delegate.self))
 """
 # name: (sdk, minimum iOS in Info.plist, device families)
+SWIFT_CRASH = SWIFT.replace("window = UIWindow(frame: UIScreen.main.bounds)",
+                           'fatalError("devdrop e2e crash")')
 IOS = {
     "ios-sim": ("iphonesimulator", "17.0", [1, 2]),
     "ios-sim-min99": ("iphonesimulator", "99.0", [1, 2]),
     "ios-sim-ipadonly": ("iphonesimulator", "17.0", [2]),
     "ios-device": ("iphoneos", "17.0", [1, 2]),
+    "ios-sim-crash": ("iphonesimulator", "17.0", [1, 2]),
 }
 
 
@@ -155,6 +160,7 @@ def build_android(out, work):
         else:
             shutil.copy(aligned, dest)
         built[name] = {"path": dest, "version_code": code, "min_sdk": min_sdk, "key": key, **extra}
+    built.update(build_crash(out, work, bt, jar))
     built.update(build_native(out, work, bt, jar))
     built.update(build_bundle(out, work, bt, jar))
     shutil.copy(keystore(work, "a"), os.path.join(out, "e2e-signing.jks"))   # alias a, password devdrop
@@ -188,6 +194,32 @@ def build_bundle(out, work, bt, jar):
     sh(bundletool, "build-bundle", f"--modules={module}", f"--output={dest}")
     return {"app-bundle": {"path": dest, "version_code": 4, "min_sdk": 23, "key": None, "abi": "arm64-v8a",
                            "bundle": True}}
+
+
+def build_crash(out, work, bt, jar):
+    """An APK whose activity throws in onCreate: it dies right after launch."""
+    src = os.path.join(work, "crash", "src", *PACKAGE.split("."))
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "Main.java"), "w") as f:
+        f.write(CRASH_ACTIVITY)
+    classes = os.path.join(work, "crash", "classes")
+    sh("javac", "--release", "11", "-classpath", jar, "-d", classes, os.path.join(src, "Main.java"))
+    class_files = [os.path.join(dp, n) for dp, _, ns in os.walk(classes) for n in ns if n.endswith(".class")]
+    sh(os.path.join(bt, "d8"), "--min-api", "21", "--lib", jar, "--output", os.path.join(work, "crash"), *class_files)
+    manifest = os.path.join(work, "crash", "AndroidManifest.xml")
+    with open(manifest, "w") as f:
+        f.write(MANIFEST.format(package=PACKAGE, debuggable="true", extract="", main_filter=LAUNCHER, aliases=""))
+    raw = os.path.join(work, "app-crash.raw.apk")
+    sh(os.path.join(bt, "aapt2"), "link", "-o", raw, "-I", jar, "--manifest", manifest,
+       "--min-sdk-version", "21", "--target-sdk-version", "35", "--version-code", "1", "--version-name", "1.0.1")
+    with zipfile.ZipFile(raw, "a") as z:
+        z.write(os.path.join(work, "crash", "classes.dex"), "classes.dex")
+    aligned = os.path.join(work, "app-crash.aligned.apk")
+    sh(os.path.join(bt, "zipalign"), "-f", "-p", "4", raw, aligned)
+    dest = os.path.join(out, "app-crash.apk")
+    sh(os.path.join(bt, "apksigner"), "sign", "--ks", keystore(work, "a"), "--ks-pass", "pass:devdrop",
+       "--key-pass", "pass:devdrop", "--out", dest, aligned)
+    return {"app-crash": {"path": dest, "version_code": 1, "min_sdk": 21, "key": "a", "crash": True}}
 
 
 def build_native(out, work, bt, jar):
@@ -244,6 +276,9 @@ def build_ios(out, work):
     main = os.path.join(work, "main.swift")
     with open(main, "w") as f:
         f.write(SWIFT)
+    crash = os.path.join(work, "crash.swift")
+    with open(crash, "w") as f:
+        f.write(SWIFT_CRASH)
     built = {}
     for name, (sdk, min_os, families) in IOS.items():
         app = os.path.join(out, f"{name}.app")
@@ -251,7 +286,8 @@ def build_ios(out, work):
         os.makedirs(app)
         sdk_path = sh("xcrun", "--sdk", sdk, "--show-sdk-path").strip()
         target = "arm64-apple-ios17.0" + ("-simulator" if sdk == "iphonesimulator" else "")
-        sh("xcrun", "--sdk", sdk, "swiftc", "-target", target, "-sdk", sdk_path, main, "-o", os.path.join(app, "E2E"))
+        source = crash if name.endswith("-crash") else main
+        sh("xcrun", "--sdk", sdk, "swiftc", "-target", target, "-sdk", sdk_path, source, "-o", os.path.join(app, "E2E"))
         info = {
             "CFBundleIdentifier": PACKAGE, "CFBundleExecutable": "E2E", "CFBundleName": "E2E",
             "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1",

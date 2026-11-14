@@ -36,8 +36,8 @@ devdrop doctor                     check the toolchain; say what to fix on each 
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
-                [--watch [--watch-timeout S]]
-devdrop launch APP_ID [--to SEL] [--jobs N] [--json]
+                [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
+devdrop launch APP_ID [--to SEL] [--logs DIR [--log-seconds N]] [--jobs N] [--json]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 devdrop pair HOST:PORT CODE        pair with an Android device over Wi-Fi
 devdrop connect [HOST:PORT ...]    connect over Wi-Fi (default: every paired device found by mDNS)
@@ -60,6 +60,15 @@ page-size compatibility mode, which shows a warning on first launch.
 Install failures from the device are translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards.
+
+With `--logs DIR`, `install --launch` and `launch` watch the app for
+`--log-seconds` (default 5) after starting it: an app that is no longer
+running is reported as failed at stage `running`, with the first crash
+line found (an Android `FATAL EXCEPTION`, a Swift `Fatal error`, an
+uncaught Objective-C exception), and each device's log for that window
+is saved as `DIR/<device>.log` (Android: logcat main and crash buffers;
+iOS simulator: the app's process in the unified log). On a physical
+iPhone devdrop checks that the app is running but saves no log.
 
 An `.aab` is installed through
 [bundletool](https://developer.android.com/tools/bundletool) (on `PATH`,

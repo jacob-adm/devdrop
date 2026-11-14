@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Run install / launch / uninstall on many devices at once."""
 
+import json
 import os
 import re
 import stat
+import tempfile
 import time
 import zipfile
+from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from devdrop import bundle, preflight
@@ -30,6 +33,47 @@ _FAILURE = re.compile(r"Failure \[([A-Z_]+)(?::[^\]]*)?\]|(INSTALL_[A-Z_]+)")
 _COMPONENT = re.compile(r"^[A-Za-z][\w.]*/[\w.$]+$")
 
 
+@dataclass
+class LaunchLog:
+    """--logs: where device logs go and how long to watch a launched app."""
+    directory: str
+    seconds: float
+
+
+def _log_name(dev):
+    return re.sub(r"[^\w.-]", "_", dev.id) + ".log"
+
+
+def _android_crash(text, package):
+    """(crashed, reason) from logcat: a FATAL EXCEPTION block for this package's process.
+
+    The reason is the root cause (the last "Caused by:" in the block), else the
+    first exception line; newer Android splits the message across the two.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if "FATAL EXCEPTION" not in line:
+            continue
+        block = [ln.split("AndroidRuntime: ", 1)[-1].strip() for ln in lines[i + 1:i + 120]]
+        if not any(b.startswith(f"Process: {package},") for b in block[:3]):
+            continue
+        causes = [b[len("Caused by: "):] for b in block if b.startswith("Caused by: ")]
+        if causes:
+            return True, causes[-1][:300]
+        first = next((b for b in block[1:6] if ("Exception" in b or "Error" in b)
+                      and not b.startswith("Process:")), "")
+        return True, first[:300]
+    return False, ""
+
+
+def _ios_crash_line(text):
+    for line in text.splitlines():
+        for marker in ("Fatal error:", "Terminating app due to uncaught exception"):
+            if marker in line:
+                return line[line.index(marker):].strip()[:300]
+    return ""
+
+
 class StepError(Exception):
     def __init__(self, stage, reason):
         super().__init__(reason)
@@ -37,8 +81,8 @@ class StepError(Exception):
         self.reason = reason
 
 
-def record(dev, result, stage, reason, started, warnings=()):
-    return {"id": dev.id, "name": dev.name, "platform": dev.platform, "kind": dev.kind,
+def record(dev, result, stage, reason, started, warnings=(), extra=None):
+    return (extra or {}) | {"id": dev.id, "name": dev.name, "platform": dev.platform, "kind": dev.kind,
             "manufacturer": dev.manufacturer, "model": dev.model, "os_version": dev.os_version,
             "api": dev.api, "page_size": dev.page_size, "result": result, "stage": stage,
             "reason": reason, "warnings": list(warnings), "seconds": round(time.monotonic() - started, 1)}
@@ -80,6 +124,22 @@ class Android:
         if r.rc != 0 or "INSTALL_FAILED" in out or "INSTALL_PARSE_FAILED" in out:
             reason = android_failure(out) if _FAILURE.search(out) else bundle.failure(out)
             raise StepError("install", reason or f"bundletool exit {r.rc}")
+
+    def prepare_logs(self, dev):
+        self._adb(dev, "logcat", "-b", "main", "-b", "crash", "-c")
+
+    def observe(self, dev, package, log):
+        """After launch: is the app still running, and the device log for the window."""
+        time.sleep(log.seconds)
+        pids = self._adb(dev, "shell", "pidof", package).out.split()
+        text = self._adb(dev, "logcat", "-d", "-b", "main", "-b", "crash", "-v", "threadtime").out
+        path = os.path.join(log.directory, _log_name(dev))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        # A crash in the window counts even if the process is alive again (or still starting).
+        crashed, reason = _android_crash(text, package)
+        running = bool(pids) and all(p.isdigit() for p in pids) and not crashed
+        return running, path, reason
 
     def uninstall(self, dev, package, missing_ok=False):
         r = self._adb(dev, "uninstall", package)
@@ -192,6 +252,54 @@ class Ios:
                 return
         self._check("uninstall", r)
 
+    def prepare_logs(self, dev):
+        pass                                    # iOS logs are read for a time window after launch
+
+    def observe(self, dev, bundle_id, log):
+        time.sleep(log.seconds)
+        if dev.kind != "simulator":
+            return self._device_running(dev, bundle_id), None, ""
+        listed = self._run("simctl", "spawn", dev.id, "launchctl", "list").out
+        running = f"UIKitApplication:{bundle_id}[" in listed
+        info = self._run("simctl", "appinfo", dev.id, bundle_id).out
+        m = re.search(r'CFBundleExecutable = "?([^";\n]+)"?;', info)
+        executable = m.group(1).strip() if m else ""
+        text = ""
+        if executable:
+            text = self._run("simctl", "spawn", dev.id, "log", "show", "--style", "compact",
+                             "--last", f"{int(log.seconds) + 5}s",
+                             "--predicate", f'process == "{executable}"').out
+        path = os.path.join(log.directory, _log_name(dev))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return running, path, _ios_crash_line(text)
+
+    def _json(self, *args):
+        """Run a devicectl query that writes JSON to a file; its result, or None."""
+        fd, path = tempfile.mkstemp(prefix="devdrop-", suffix=".json")
+        os.close(fd)
+        try:
+            if self._run("devicectl", *args, "--json-output", path, "-q").rc != 0:
+                return None
+            with open(path, encoding="utf-8") as f:
+                return json.load(f).get("result", {})
+        except (OSError, ValueError):
+            return None
+        finally:
+            os.unlink(path)
+
+    def _device_running(self, dev, bundle_id):
+        """Physical iPhone: does any running process live inside this app's bundle?"""
+        apps = self._json("device", "info", "apps", "--device", dev.id, "--bundle-id", bundle_id,
+                          "--include-all-apps")
+        procs = self._json("device", "info", "processes", "--device", dev.id)
+        if not apps or not apps.get("apps") or procs is None:
+            return None
+        folder = apps["apps"][0].get("url", "").rstrip("/")
+        if not folder:
+            return None
+        return any(p.get("executable", "").startswith(folder + "/") for p in procs.get("runningProcesses", []))
+
     def launch(self, dev, bundle_id, fallback=""):
         if dev.kind == "simulator":
             r = self._run("simctl", "launch", "--terminate-running-process", dev.id, bundle_id)
@@ -201,39 +309,59 @@ class Ios:
         self._check("launch", r)
 
 
-def install_one(backend, dev, report, clean=False, launch=False):
+def _launch_and_watch(backend, dev, app_id, log, fallback=""):
+    """Launch; with --logs, watch the app for a while. Returns (failure reason or "", extra fields)."""
+    if log:
+        backend.prepare_logs(dev)
+    backend.launch(dev, app_id, fallback)
+    if not log:
+        return "", None
+    running, path, crash = backend.observe(dev, app_id, log)
+    extra = {"running": running, "log": path}
+    if running is False:
+        return f"app exited within {log.seconds:g}s" + (f": {crash}" if crash else ""), extra
+    return "", extra
+
+
+def install_one(backend, dev, report, clean=False, launch=False, log=None):
     started = time.monotonic()
     reason = preflight.check(report, dev)
     if reason:
         return record(dev, "skipped", "preflight", reason, started)
     notes = preflight.warnings(report, dev)
+    extra = None
     try:
         if clean:
             backend.uninstall(dev, report["id"], missing_ok=True)
         backend.install(dev, report)
         if launch:
-            backend.launch(dev, report["id"], report.get("launcher", ""))
+            died, extra = _launch_and_watch(backend, dev, report["id"], log, report.get("launcher", ""))
+            if died:
+                return record(dev, "failed", "running", died, started, notes, extra)
     except StepError as e:
-        return record(dev, "failed", e.stage, e.reason, started, notes)
+        return record(dev, "failed", e.stage, e.reason, started, notes, extra)
     except ToolError as e:
-        return record(dev, "failed", "tool", str(e), started, notes)
-    return record(dev, "ok", "launch" if launch else "install", "", started, notes)
+        return record(dev, "failed", "tool", str(e), started, notes, extra)
+    return record(dev, "ok", "launch" if launch else "install", "", started, notes, extra)
 
 
-def by_id_one(action, backend, dev, app_id):
+def by_id_one(action, backend, dev, app_id, log=None):
     started = time.monotonic()
     if dev.state != "ready":
         return record(dev, "skipped", "preflight", f"device is {dev.state}", started)
+    extra = None
     try:
         if action == "launch":
-            backend.launch(dev, app_id)
+            died, extra = _launch_and_watch(backend, dev, app_id, log)
+            if died:
+                return record(dev, "failed", "running", died, started, extra=extra)
         else:
             backend.uninstall(dev, app_id)
     except StepError as e:
-        return record(dev, "failed", e.stage, e.reason, started)
+        return record(dev, "failed", e.stage, e.reason, started, extra=extra)
     except ToolError as e:
-        return record(dev, "failed", "tool", str(e), started)
-    return record(dev, "ok", action, "", started)
+        return record(dev, "failed", "tool", str(e), started, extra=extra)
+    return record(dev, "ok", action, "", started, extra=extra)
 
 
 def fan_out(devices, work, jobs=None, on_done=None):
