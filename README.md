@@ -156,8 +156,24 @@ started. It needs the Android SDK build-tools and emulator, the AVDs
 named in `DEVDROP_E2E_AVDS` and, on macOS, an iOS simulator runtime.
 The default AVDs are chosen where `adb` behaves differently rather than
 by market share: API 23 (no `cmd package`, so launch uses the launcher
-read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37. A
+read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37.
+On iOS it uses one iPhone simulator per installed runtime; install an
+older runtime too (for example `xcodebuild -downloadPlatform iOS
+-buildVersion 18.5`) to test more than the current iOS. Quick-boot
+snapshots of the emulators the run started are deleted afterwards, so
+repeated runs do not fill the disk. A
 per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
+
+## Tested on
+
+- Android emulators (Google system images, arm64): API 23, 24, 29 (also
+  with 1 GB of RAM), 34, 35, 36 and 37.
+- iOS simulators: iOS 18.5 and 26.3.
+- A physical iPhone on iOS 26: device listing, state checks and launch.
+  Installing a signed build on a physical iPhone has not been tested yet.
+- Not yet tested on physical Android phones, including vendor builds such
+  as Samsung One UI or Xiaomi HyperOS, whose install prompts and
+  restrictions differ from Google's images.
 
 ## License
 

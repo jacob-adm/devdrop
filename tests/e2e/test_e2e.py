@@ -11,7 +11,8 @@ Settings (environment):
                          (default: the first iPhone simulator of each installed iOS runtime)
 
 A named AVD or simulator that is not installed fails the run rather than
-shrinking the matrix silently.
+shrinking the matrix silently. Quick-boot snapshots of the emulators the
+run started are deleted at the end (1-3 GB each).
     DEVDROP_E2E_CACHE    where test apps and the report go (default ~/.cache/devdrop-e2e)
 
 Every result devdrop reports is checked against the device itself with
@@ -159,6 +160,13 @@ def tearDownModule():
             devdrop("shutdown", "--to", ",".join(running), "--json")
             S["left_running"] = [x for x in subprocess.run([S["adb"], "devices"], capture_output=True,
                                                            text=True).stdout.split() if x in running]
+        # The emulator saves a 1-3 GB quick-boot snapshot on every exit; drop the ones
+        # this run created so repeated runs do not fill the disk.
+        from devdrop.virtual import avd_home
+        for name in S.get("avds", []):
+            if name in S.get("booted_by_us", []):
+                shutil.rmtree(os.path.join(avd_home(), f"{name}.avd", "snapshots", "default_boot"),
+                              ignore_errors=True)
     finally:
         with open(os.path.join(CACHE, "e2e-report.json"), "w") as f:
             json.dump({"avds": S.get("avds"), "sims": S.get("sims"), "ios_versions": S.get("sim_os"),
