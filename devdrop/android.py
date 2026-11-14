@@ -61,6 +61,7 @@ def parse_getprop(text):
 def _apply_props(dev, props):
     dev.model = props.get("ro.product.model") or dev.model
     dev.manufacturer = props.get("ro.product.manufacturer", "")
+    dev.serial_number = props.get("ro.serialno") or props.get("ro.boot.serialno", "")
     dev.os_version = props.get("ro.build.version.release", "")
     sdk = props.get("ro.build.version.sdk", "")
     dev.api = int(sdk) if sdk.isdigit() else None
@@ -98,4 +99,54 @@ def list_devices(adb):
     if ready:
         with ThreadPoolExecutor(max_workers=min(8, len(ready))) as pool:
             list(pool.map(fill, ready))
-    return devices
+    return one_per_device(devices)
+
+
+def one_per_device(devices):
+    """Drop a Wi-Fi entry that is the same device as a USB or emulator entry.
+
+    Matching is deliberately narrow: ro.serialno is not unique everywhere (every
+    emulator reports the emulator version, and some cheap phones share
+    0123456789ABCDEF), so only a Wi-Fi entry is ever dropped, and only when
+    serial, model and (for emulators) AVD name all match a wired entry.
+    """
+    def key(d):
+        return (d.serial_number, d.model, d.name if d.kind == "emulator" else "")
+
+    wired = {key(d) for d in devices if d.state == READY and d.serial_number and d.transport != "wifi"}
+    return [d for d in devices
+            if not (d.state == READY and d.transport == "wifi" and d.serial_number and key(d) in wired)]
+
+
+def parse_mdns(text):
+    """(service name, type, host:port) from `adb mdns services`."""
+    services = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1].startswith("_adb") and ":" in parts[2]:
+            services.append((parts[0], parts[1].rstrip("."), parts[2]))
+    return services
+
+
+def pair(adb, address, code):
+    r = run([adb, "pair", address, code])
+    out = (r.out + r.err).strip()
+    if r.rc != 0 or "Successfully paired" not in out:
+        raise ToolError(out.splitlines()[-1] if out else f"adb pair exit {r.rc}")
+    return out.splitlines()[-1]
+
+
+def connect(adb, address):
+    r = run([adb, "connect", address])
+    out = (r.out + r.err).strip()
+    if r.rc != 0 or not (out.startswith("connected to") or out.startswith("already connected")):
+        raise ToolError(out.splitlines()[-1] if out else f"adb connect exit {r.rc}")
+    return out.splitlines()[-1]
+
+
+def discover(adb):
+    """Addresses of devices advertising wireless debugging (connect, not pairing)."""
+    r = run([adb, "mdns", "services"])
+    if r.rc != 0:
+        raise ToolError(f"adb mdns services: {(r.err or r.out).strip() or 'exit ' + str(r.rc)}")
+    return [addr for _, kind, addr in parse_mdns(r.out) if kind == "_adb-tls-connect._tcp"]

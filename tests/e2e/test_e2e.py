@@ -414,6 +414,45 @@ class C_Ios(unittest.TestCase):
         self.assertEqual(rc, 1)
 
 
+class E_WirelessAndWatch(unittest.TestCase):
+    def test_1_tcp_connection_is_not_a_second_device(self):
+        serial = next(iter(S["serials"].values()))
+        port = int(serial.split("-")[1]) + 1                   # emulator-5554 listens for adb on 5555
+        address = f"127.0.0.1:{port}"
+        try:
+            rc, _, r = devdrop("connect", address, check_json=False)
+            self.assertEqual(rc, 0, r.stderr)
+            self.assertIn(address, subprocess.run([S["adb"], "devices"], capture_output=True, text=True).stdout)
+            _, out, _ = devdrop("devices", "--json")
+            ids = [d["id"] for d in out["devices"]]
+            self.assertIn(serial, ids)
+            self.assertNotIn(address, ids)                      # same emulator, listed once
+        finally:
+            subprocess.run([S["adb"], "disconnect", address], capture_output=True)
+
+    def test_2_watch_installs_on_a_device_that_boots_later(self):
+        name = next(n for n in S["avds"] if n != "devdrop_api23")
+        devdrop("uninstall", PACKAGE, "--to", S["android"], "--json")
+        devdrop("shutdown", "--to", name, "--json")
+        watcher = subprocess.Popen([S["devdrop"], "install", apk("app-v1"), "--to", name, "--watch",
+                                    "--watch-timeout", "420", "--json"],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            time.sleep(5)
+            rc, out, _ = devdrop("boot", "--to", name, "--boot-timeout", "400", "--json")
+            self.assertEqual(rc, 0, out)
+            serial = out["results"][0]["reason"].split()[-1]   # "running as emulator-NNNN"
+            deadline = time.monotonic() + 120
+            while PACKAGE not in adb(serial, "shell", "pm", "list", "packages", PACKAGE):
+                self.assertLess(time.monotonic(), deadline, "watch did not install on the booted device")
+                time.sleep(2)
+        finally:
+            watcher.terminate()
+            watcher.communicate(timeout=60)      # drain and close its pipes
+        _, devs, _ = devdrop("devices", "--json")
+        S["serials"][name] = next(d["id"] for d in devs["devices"] if d["name"] == name)
+
+
 class D_Everything(unittest.TestCase):
     def test_one_install_across_both_platforms_kinds(self):
         """devices, doctor and a mixed launch across every matrix device at once."""
