@@ -7,7 +7,7 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: early development. `devices` and `doctor` work; `inspect`,
+Status: early development. `devices`, `doctor` and `inspect` work;
 `install`, `launch` and `uninstall` are next.
 
 ## Requirements
@@ -26,7 +26,18 @@ Either platform works without the other.
 ```
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
+devdrop inspect PATH [--json]      show what an .apk, .ipa or .app contains
 ```
+
+`inspect` reads the build directly, without the platform tools:
+
+- APK: package, version name and code, minimum and target SDK, native
+  ABIs, whether it is debuggable, the launcher activity, and signing
+  schemes (v1, v2 or later). Android App Bundles (.aab) are not read yet.
+- IPA or .app: bundle id, version and build, minimum iOS version, device
+  families, whether it is built for devices or the simulator, and the
+  embedded provisioning profile: type, team, the device UDIDs it allows
+  and when it expires.
 
 `devices` lists each device once: id, name, platform, kind (physical,
 emulator, simulator), model, OS version and state. Only `ready` devices
@@ -54,7 +65,7 @@ lab = ["pixel8", "iphone"]
 |---|---|
 | 0 | success |
 | 1 | a platform tool failed, or `doctor` found something to fix |
-| 2 | usage or configuration error |
+| 2 | usage or configuration error, or a build devdrop cannot read |
 | 4 | neither `adb` nor `xcrun` was found |
 
 ## License

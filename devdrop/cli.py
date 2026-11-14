@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from devdrop import __version__, android, config, ios
+from devdrop import __version__, android, artifact, config, ios
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
 
@@ -165,6 +165,35 @@ def cmd_doctor(args):
     return PARTIAL if problems else OK
 
 
+def cmd_inspect(args):
+    try:
+        report = artifact.inspect(args.path)
+    except artifact.ArtifactError as e:
+        print(f"devdrop: {safe(e)}", file=sys.stderr)
+        return USAGE
+    if args.json:
+        json.dump(report, sys.stdout, indent=2)
+        print()
+        return OK
+    profile = report.pop("profile", None)
+    for key, value in report.items():
+        if isinstance(value, list):
+            value = ", ".join(map(str, value)) or "-"
+        print(f"{key + ':':12} {safe(value) if value != '' else '-'}")
+    if report["platform"] == "ios":
+        if profile is None:
+            print(f"{'profile:':12} none")
+        else:
+            devices = "all" if profile["all_devices"] else len(profile["devices"])
+            status = "EXPIRED" if profile["expired"] else "valid"
+            print(f"{'profile:':12} {safe(profile['name'])} ({profile['kind']}, team {profile['team']})")
+            print(f"{'expires:':12} {profile['expires']} ({status})")
+            print(f"{'devices:':12} {devices}")
+            for udid in profile["devices"]:
+                print(f"{'':12} {safe(udid)}")
+    return OK
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="devdrop",
                                 description="Install one mobile build on every attached Android and iOS device.")
@@ -176,6 +205,10 @@ def build_parser():
     d.add_argument("--json", action="store_true", help="machine-readable output")
     d.add_argument("--all", action="store_true", help="include simulators that are shut down")
     d.set_defaults(func=cmd_devices)
+    i = sub.add_parser("inspect", help="show what an .apk, .ipa or .app contains")
+    i.add_argument("path")
+    i.add_argument("--json", action="store_true", help="machine-readable output")
+    i.set_defaults(func=cmd_inspect)
     doc = sub.add_parser("doctor", help="check the toolchain and each device's state")
     doc.set_defaults(func=cmd_doctor)
     return p
