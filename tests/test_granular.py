@@ -266,6 +266,18 @@ class PreflightEdges(unittest.TestCase):
         ios_dev = Device("U", "ios", "physical", "ready")
         self.assertEqual(preflight.check(self.APK, ios_dev), "apk build cannot go on an ios device")
 
+    def test_minimums_are_inclusive(self):
+        dev = Device("A", "android", "physical", "ready", api=21)
+        self.assertIsNone(preflight.check(self.APK, Device("B", "android", "emulator", "ready", api=21)))
+        self.assertEqual(preflight.check(self.APK, Device("C", "android", "emulator", "ready", api=20)),
+                         "API 20 < minSdk 21")
+        self.assertIsNotNone(dev)
+        sim = Device("U", "ios", "simulator", "ready", os_version="18.4")
+        report = {"platform": "ios", "target": "simulator", "min_os": "18.4", "families": ["iphone"]}
+        self.assertIsNone(preflight.check(report, sim))
+        sim.os_version = "18.3.9"
+        self.assertEqual(preflight.check(report, sim), "iOS 18.3.9 < minimum 18.4")
+
     def test_ios_version_with_suffix(self):
         dev = Device("U", "ios", "simulator", "ready", os_version="18.5b")
         report = {"platform": "ios", "target": "simulator", "min_os": "18.4", "families": ["iphone"]}
