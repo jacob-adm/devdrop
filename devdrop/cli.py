@@ -9,7 +9,7 @@ import tempfile
 import time
 import zipfile
 
-from devdrop import __version__, android, artifact, config, deploy, ios, virtual
+from devdrop import __version__, android, artifact, config, deploy, ios, preflight, virtual
 from devdrop.select import SelectorError, select
 from devdrop.device import READY
 from devdrop.tools import ToolError, find_adb, find_xcrun, run
@@ -111,7 +111,9 @@ def cmd_devices(args):
     else:
         rows = [("ID", "NAME", "PLATFORM", "KIND", "MAKER", "MODEL", "OS", "STATE")]
         for d in devices:
-            os_text = " ".join(x for x in (d.os_version, f"(API {d.api})" if d.api else "") if x)
+            extra = ", ".join(x for x in (f"API {d.api}" if d.api else "",
+                                          "16 KB pages" if d.page_size == 16384 else "") if x)
+            os_text = " ".join(x for x in (d.os_version, f"({extra})" if extra else "") if x)
             rows.append((d.id, d.name, d.platform, d.kind, d.manufacturer, d.model, os_text, d.state))
         if devices:
             widths = [max(len(safe(r[i])) for r in rows) for i in range(len(rows[0]))]
@@ -200,10 +202,21 @@ def cmd_inspect(args):
         print()
         return OK
     profile = report.pop("profile", None)
+    page = report.pop("page_16k", None)
     for key, value in report.items():
         if isinstance(value, list):
             value = ", ".join(map(str, value)) or "-"
         print(f"{key + ':':12} {safe(value) if value != '' else '-'}")
+    if page is not None:
+        if not page["native_64bit"]:
+            print(f"{'16k_pages:':12} ready (no 64-bit native code)")
+        elif page["ready"]:
+            print(f"{'16k_pages:':12} ready")
+        else:
+            print(f"{'16k_pages:':12} NOT ready")
+            for lib in page["libraries"]:
+                if not lib["ready"]:
+                    print(f"{'':12} {safe(lib['path'])}: {preflight._why(lib)}")
     if report["platform"] == "ios":
         if profile is None:
             print(f"{'profile:':12} none")
@@ -232,6 +245,8 @@ def _print_record(rec):
     label = " ".join(x for x in (rec["id"], rec["name"]) if x)
     detail = f"{rec['stage']}: {rec['reason']}" if rec["reason"] else rec["stage"]
     print(f"{rec['result']:8} {safe(label)}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
+    for note in rec.get("warnings", []):
+        print(f"{'':8} warning: {safe(note)}", flush=True)
 
 
 def _targets(args, cfg, platforms):

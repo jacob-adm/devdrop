@@ -40,8 +40,12 @@ level is below the app's minSdk, the build has no native code for its
 CPU, or the APK is unsigned. For iOS: a simulator build sent to a device
 or the reverse, an iOS version below the app's minimum, an iPad-only app
 on an iPhone, and for devices a missing, expired or App Store profile,
-or a device whose UDID the profile does not list. Install failures from the device are
-translated too (for example a signing-key clash says to use `--clean`).
+or a device whose UDID the profile does not list. Installing an APK whose
+native code is not 16 KB ready on a 16 KB page-size device goes ahead
+with a warning naming each library: on the 16 KB emulator images tested
+(Android 15 and 17), such apps installed and ran, on Android 16+ in the
+page-size compatibility mode, which shows a warning on first launch.
+Install failures from the device are translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards. Each device's result prints as it
 finishes, followed by a count. With `--json`, every result also names
@@ -73,6 +77,11 @@ simulators and never touches physical devices.
 - APK: package, version name and code, minimum and target SDK, native
   ABIs, whether it is debuggable, the launcher activity, and signing
   schemes (v1, v2 or later). Android App Bundles (.aab) are not read yet.
+- APK native code and 16 KB memory pages: for each 64-bit library,
+  whether every ELF LOAD segment is 16 KB aligned and, if it is stored
+  uncompressed, whether it starts on a 16 KB boundary in the APK.
+  Newer Android hardware uses 16 KB pages, and Google Play requires apps
+  targeting Android 15 or later to support them.
 - IPA or .app: bundle id, version and build, minimum iOS version, device
   families, whether it is built for devices or the simulator, and the
   embedded provisioning profile: type, team, the device UDIDs it allows
@@ -156,7 +165,8 @@ started. It needs the Android SDK build-tools and emulator, the AVDs
 named in `DEVDROP_E2E_AVDS` and, on macOS, an iOS simulator runtime.
 The default AVDs are chosen where `adb` behaves differently rather than
 by market share: API 23 (no `cmd package`, so launch uses the launcher
-read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37.
+read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37,
+plus 16 KB page-size images of 35 and 37.
 On iOS it uses one iPhone simulator per installed runtime; install an
 older runtime too (for example `xcodebuild -downloadPlatform iOS
 -buildVersion 18.5`) to test more than the current iOS. Quick-boot
@@ -167,7 +177,8 @@ per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
 ## Tested on
 
 - Android emulators (Google system images, arm64): API 23, 24, 29 (also
-  with 1 GB of RAM), 34, 35, 36 and 37.
+  with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
+  API 35 and 37.
 - iOS simulators: iOS 18.5 and 26.3.
 - A physical iPhone on iOS 26: device listing, state checks and launch.
   Installing a signed build on a physical iPhone has not been tested yet.

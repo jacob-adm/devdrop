@@ -83,10 +83,16 @@ def list_devices(adb):
         except ToolError:
             dev.state = "not-responding"
             return
-        if r.rc == 0:
-            _apply_props(dev, parse_getprop(r.out))
-        else:
+        if r.rc != 0:
             dev.state = "not-responding"
+            return
+        _apply_props(dev, parse_getprop(r.out))
+        if dev.api is not None and dev.api >= 35:          # 16 KB pages exist from Android 15
+            try:
+                page = run([adb, "-s", dev.id, "shell", "getconf", "PAGE_SIZE"]).out.strip()
+            except ToolError:
+                page = ""
+            dev.page_size = int(page) if page.isdigit() else None
 
     ready = [d for d in devices if d.state == READY]
     if ready:

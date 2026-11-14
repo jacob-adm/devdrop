@@ -37,11 +37,11 @@ class StepError(Exception):
         self.reason = reason
 
 
-def record(dev, result, stage, reason, started):
+def record(dev, result, stage, reason, started, warnings=()):
     return {"id": dev.id, "name": dev.name, "platform": dev.platform, "kind": dev.kind,
             "manufacturer": dev.manufacturer, "model": dev.model, "os_version": dev.os_version,
-            "api": dev.api, "result": result, "stage": stage, "reason": reason,
-            "seconds": round(time.monotonic() - started, 1)}
+            "api": dev.api, "page_size": dev.page_size, "result": result, "stage": stage,
+            "reason": reason, "warnings": list(warnings), "seconds": round(time.monotonic() - started, 1)}
 
 
 def android_failure(text):
@@ -191,6 +191,7 @@ def install_one(backend, dev, report, clean=False, launch=False):
     reason = preflight.check(report, dev)
     if reason:
         return record(dev, "skipped", "preflight", reason, started)
+    notes = preflight.warnings(report, dev)
     try:
         if clean:
             backend.uninstall(dev, report["id"], missing_ok=True)
@@ -198,10 +199,10 @@ def install_one(backend, dev, report, clean=False, launch=False):
         if launch:
             backend.launch(dev, report["id"], report.get("launcher", ""))
     except StepError as e:
-        return record(dev, "failed", e.stage, e.reason, started)
+        return record(dev, "failed", e.stage, e.reason, started, notes)
     except ToolError as e:
-        return record(dev, "failed", "tool", str(e), started)
-    return record(dev, "ok", "launch" if launch else "install", "", started)
+        return record(dev, "failed", "tool", str(e), started, notes)
+    return record(dev, "ok", "launch" if launch else "install", "", started, notes)
 
 
 def by_id_one(action, backend, dev, app_id):

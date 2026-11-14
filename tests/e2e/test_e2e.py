@@ -21,6 +21,7 @@ adb or simctl. Devices this run booted are shut down at the end.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,8 +39,10 @@ PACKAGE = "dev.devdrop.e2e"
 #   24  oldest with `cmd package resolve-activity`; 29 scoped storage era
 #   29_lowmem  the same image with 1 GB of RAM
 #   34, 35, 36  current; 37 newest release
+#   35_16k, 37_16k  16 KB memory pages (before and after Android 16's backcompat mode)
 DEFAULT_AVDS = ("devdrop_api23,devdrop_api24,devdrop_api29,devdrop_api29_lowmem,"
-                "devdrop_api34,devdrop_api35,devdrop_api36,devdrop_api37")
+                "devdrop_api34,devdrop_api35,devdrop_api36,devdrop_api37,"
+                "devdrop_api35_16k,devdrop_api37_16k")
 
 S = {}            # shared state: devdrop path, fixtures, device ids
 REPORT = []       # every devdrop run, for the report file
@@ -144,6 +147,7 @@ def _set_up():
     _, devs, _ = devdrop("devices", "--json")
     S["serials"] = {d["name"]: d["id"] for d in devs["devices"] if d["name"] in S["avds"]}
     S["api"] = {d["id"]: d["api"] for d in devs["devices"] if d["platform"] == "android"}
+    S["page"] = {d["id"]: d["page_size"] for d in devs["devices"] if d["platform"] == "android"}
     S["android"] = ",".join(S["serials"].values())
 
 
@@ -293,6 +297,30 @@ class B_Android(unittest.TestCase):
         time.sleep(2)
         for serial in old:
             self.assertIn(f"{PACKAGE}/.Main", adb(serial, "shell", "dumpsys", "activity", "activities"))
+
+    def test_5c_16k_page_size_readiness(self):
+        if "app-native16k" not in S["fx"]["android"]:
+            self.skipTest("native test apps were not built (needs clang and lld)")
+        sixteen = [s for s in S["serials"].values() if S["page"].get(s) == 16384]
+        if not sixteen:
+            self.skipTest("no 16 KB page-size device in the matrix")
+        for name, ready in (("app-native16k", True), ("app-native4k", False)):
+            rc, out, _ = devdrop("install", apk(name), "--to", S["android"], "--clean", "--launch", "--json")
+            self.assertEqual(rc, 0, out)
+            time.sleep(3)
+            for serial, rec in by_id(out).items():
+                with self.subTest(app=name, serial=serial, api=S["api"][serial], page=S["page"].get(serial)):
+                    warned = bool(rec["warnings"])
+                    self.assertEqual(warned, serial in sixteen and not ready)
+                    if warned:
+                        self.assertIn("lib/arm64-v8a/libe2e.so (ELF aligned to 4 KB)", rec["warnings"][0])
+                    # The app loads its library at start: a running process proves it loaded.
+                    self.assertTrue(adb(serial, "shell", "pidof", PACKAGE).strip())
+                    if S["api"][serial] >= 36:
+                        # Android 16+ records the mode: 0 = none, 4 = backcompat for unaligned ELF.
+                        dump = adb(serial, "shell", "dumpsys", "package", PACKAGE)
+                        mode = re.search(r"pageSizeCompat=(\d+)", dump)
+                        self.assertEqual(int(mode.group(1)), 4 if warned else 0)
 
     def test_6_launch_uninstall_twice(self):
         devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--json")
