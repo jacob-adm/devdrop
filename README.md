@@ -179,6 +179,10 @@ python3 -m unittest discover -s tests          # unit, CLI and fuzz tests (no de
 DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v   # end to end on real devices
 ```
 
+`ci/linux.sh` runs the unit suite on Linux in Docker (Python 3.11 and
+3.13 by default, `DEVDROP_LINUX_PYTHONS` to change), using only the files
+git tracks and no network.
+
 The unit suite runs devdrop as a separate process against stand-in
 `adb`, `xcrun` and `emulator` programs. `DEVDROP_FUZZ_N` sets the number
 of fuzzed builds per reader (default 10,000). Branch coverage, measured
