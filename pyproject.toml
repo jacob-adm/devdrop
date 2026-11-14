@@ -26,3 +26,14 @@ devdrop = "devdrop.cli:main"
 
 [tool.setuptools]
 packages = ["devdrop"]
+
+# Development only: `python -m coverage run -m unittest discover -s tests`
+# then `python -m coverage report`. Child processes are measured too.
+[tool.coverage.run]
+branch = true
+source = ["devdrop"]
+patch = ["subprocess"]
+parallel = true
+
+[tool.coverage.report]
+show_missing = true

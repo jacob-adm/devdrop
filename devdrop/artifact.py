@@ -15,33 +15,41 @@ class ArtifactError(ValueError):
     """The file is not a build devdrop can read."""
 
 
+def _text(value):
+    """Plist values are untyped input: report them as text."""
+    return value if isinstance(value, str) else str(value)
+
+
 SIG_BLOCK_MAGIC = b"APK Sig Block 42"
 
 
 def inspect(path, now=None):
-    if os.path.isdir(path):
-        if not path.rstrip("/\\").endswith(".app"):
-            raise ArtifactError(f"{path}: a directory must be an .app bundle")
-        return _app_dir(path, now)
-    if not os.path.isfile(path):
+    if os.path.isdir(path) and not path.rstrip("/\\").endswith(".app"):
+        raise ArtifactError(f"{path}: a directory must be an .app bundle")
+    if not os.path.exists(path):
         raise ArtifactError(f"{path}: not found")
     lower = path.lower()
     try:
+        if os.path.isdir(path):
+            return _app_dir(path, now)
         if lower.endswith(".apk"):
             return _apk(path)
         if lower.endswith(".ipa"):
             return _ipa(path, now)
-        if lower.endswith(".aab"):
-            raise ArtifactError(f"{path}: Android App Bundles (.aab) are not supported yet; build an APK")
-        raise ArtifactError(f"{path}: unknown build type (expected .apk, .ipa or .app)")
+    except ArtifactError:
+        raise
     except zipfile.BadZipFile as e:
         raise ArtifactError(f"{path}: not a valid zip archive ({e})")
     except axml.AxmlError as e:
         raise ArtifactError(f"{path}: AndroidManifest.xml: {e}")
-    except (plistlib.InvalidFileException, ValueError, OSError) as e:
-        if isinstance(e, ArtifactError):
-            raise
-        raise ArtifactError(f"{path}: {e}")
+    except Exception as e:
+        # A build is untrusted input: damaged zips, plists and manifests raise
+        # many exception types (zlib.error, RuntimeError for "encrypted" entries,
+        # ExpatError, TypeError for wrongly typed plist values). Report, never crash.
+        raise ArtifactError(f"{path}: unreadable build ({type(e).__name__}: {e})")
+    if lower.endswith(".aab"):
+        raise ArtifactError(f"{path}: Android App Bundles (.aab) are not supported yet; build an APK")
+    raise ArtifactError(f"{path}: unknown build type (expected .apk, .ipa or .app)")
 
 
 # ---------------------------------------------------------------- Android
@@ -130,7 +138,12 @@ def profile_from_bytes(data, now=None):
     end = data.find(b"</plist>", start)
     if start < 0 or end < 0:
         raise ArtifactError("embedded.mobileprovision: no property list found")
-    p = plistlib.loads(data[start:end + len(b"</plist>")])
+    try:
+        p = plistlib.loads(data[start:end + len(b"</plist>")])
+    except Exception as e:
+        raise ArtifactError(f"embedded.mobileprovision: unreadable property list ({type(e).__name__}: {e})")
+    if not isinstance(p, dict):
+        raise ArtifactError("embedded.mobileprovision: property list is not a dictionary")
     now = now or datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     expires = p.get("ExpirationDate")
     devices = p.get("ProvisionedDevices")
@@ -143,13 +156,12 @@ def profile_from_bytes(data, now=None):
         kind = "development"
     else:
         kind = "ad-hoc"
-    if isinstance(expires, datetime.datetime) and expires.tzinfo is not None:
-        expires = expires.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    team = p.get("TeamIdentifier") or [""]
     return {
-        "name": p.get("Name", ""),
+        "name": _text(p.get("Name", "")),
         "kind": kind,
-        "team": (p.get("TeamIdentifier") or [""])[0],
-        "devices": list(devices or []),
+        "team": _text(team[0] if isinstance(team, list) else team),
+        "devices": [_text(d) for d in devices] if isinstance(devices, list) else [],
         "all_devices": bool(p.get("ProvisionsAllDevices")),
         "expires": expires.isoformat() + "Z" if isinstance(expires, datetime.datetime) else "",
         "expired": isinstance(expires, datetime.datetime) and expires <= now,
@@ -160,15 +172,18 @@ def _ios_report(kind, path, info, profile):
     platforms = info.get("CFBundleSupportedPlatforms") or [info.get("DTPlatformName", "")]
     simulator = any("simulator" in str(p).lower() for p in platforms)
     families = {1: "iphone", 2: "ipad"}
+    family_ids = info.get("UIDeviceFamily", [1])
+    if not isinstance(family_ids, list):
+        family_ids = [family_ids]
     return {
         "type": kind,
         "platform": "ios",
         "path": path,
-        "id": info.get("CFBundleIdentifier", ""),
-        "version": str(info.get("CFBundleShortVersionString", "")),
-        "build": str(info.get("CFBundleVersion", "")),
-        "min_os": str(info.get("MinimumOSVersion", "")),
-        "families": [families.get(f, str(f)) for f in info.get("UIDeviceFamily", [1])],
+        "id": _text(info.get("CFBundleIdentifier", "")),
+        "version": _text(info.get("CFBundleShortVersionString", "")),
+        "build": _text(info.get("CFBundleVersion", "")),
+        "min_os": _text(info.get("MinimumOSVersion", "")),
+        "families": [families.get(f, _text(f)) for f in family_ids],
         "target": "simulator" if simulator else "device",
         "profile": profile,
     }

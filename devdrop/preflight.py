@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Why a build cannot go on a device, decided before trying."""
 
+import re
+
 from devdrop.device import READY
 
 
@@ -32,9 +34,12 @@ def _android(report, device):
 def _version(text):
     parts = []
     for p in str(text).split("."):
-        if not p.isdigit():
+        m = re.match(r"\d+", p)
+        if not m:
             break
-        parts.append(int(p))
+        parts.append(int(m.group()))
+        if m.end() < len(p):        # "5b2": keep 5, stop at the suffix
+            break
     return tuple(parts) + (0,) * (3 - len(parts))
 
 
