@@ -7,8 +7,7 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: early development. All commands work for Android; installing
-on iOS devices and simulators is next.
+Status: early development (0.1.0 not yet released).
 
 ## Requirements
 
@@ -36,11 +35,19 @@ devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 touching a device it checks that the build can go there and skips the
 device with a plain reason if not: the device is not ready, its API
 level is below the app's minSdk, the build has no native code for its
-CPU, or the APK is unsigned. Install failures from the device are
+CPU, or the APK is unsigned. For iOS: a simulator build sent to a device
+or the reverse, an iOS version below the app's minimum, an iPad-only app
+on an iPhone, and for devices a missing, expired or App Store profile,
+or a device whose UDID the profile does not list. Install failures from the device are
 translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards. Each device's result prints as it
 finishes, followed by a count.
+
+iOS devices are driven with `xcrun devicectl` and simulators with
+`xcrun simctl`; an `.ipa` is unpacked to its `.app` first. Only booted
+simulators are targets. `launch` and `uninstall` take an Android package
+name or an iOS bundle id and act on every selected device.
 
 `inspect` reads the build directly, without the platform tools:
 

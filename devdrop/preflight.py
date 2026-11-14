@@ -12,7 +12,7 @@ def check(report, device):
         return f"device is {device.state}"
     if device.platform == "android":
         return _android(report, device)
-    return None
+    return _ios(report, device)
 
 
 def _android(report, device):
@@ -26,4 +26,38 @@ def _android(report, device):
     abis = report.get("abis") or []
     if abis and device.abis and not set(abis) & set(device.abis):
         return f"no native code for {', '.join(device.abis)} (build has {', '.join(abis)})"
+    return None
+
+
+def _version(text):
+    parts = []
+    for p in str(text).split("."):
+        if not p.isdigit():
+            break
+        parts.append(int(p))
+    return tuple(parts) + (0,) * (3 - len(parts))
+
+
+def _ios(report, device):
+    simulator = device.kind == "simulator"
+    if report.get("target") == "simulator" and not simulator:
+        return "simulator build -> physical device"
+    if report.get("target") == "device" and simulator:
+        return "device build -> simulator"
+    if report.get("min_os") and device.os_version and \
+            _version(device.os_version) < _version(report["min_os"]):
+        return f"iOS {device.os_version} < minimum {report['min_os']}"
+    if report.get("families") == ["ipad"] and "ipad" not in f"{device.model} {device.name}".lower():
+        return "iPad-only app -> iPhone"
+    if simulator:
+        return None
+    profile = report.get("profile")
+    if profile is None:
+        return "no provisioning profile (build is not signed for devices)"
+    if profile["kind"] == "app-store":
+        return "App Store profile cannot install on devices"
+    if profile["expired"]:
+        return f"profile expired {profile['expires'][:10]}"
+    if not profile["all_devices"] and device.id not in profile["devices"]:
+        return "UDID not in provisioning profile"
     return None
