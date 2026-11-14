@@ -153,8 +153,10 @@ Android build-tools, iOS apps with `swiftc`), boots the device matrix
 with `devdrop boot`, runs every command and failure case, checks each
 result on the device with `adb` or `simctl`, and shuts down what it
 started. It needs the Android SDK build-tools and emulator, the AVDs
-named in `DEVDROP_E2E_AVDS` (default `devdrop_api24`, `_api29`, `_api34`,
-`_api35`, `_api36`) and, on macOS, an iOS simulator runtime. A
+named in `DEVDROP_E2E_AVDS` and, on macOS, an iOS simulator runtime.
+The default AVDs are chosen where `adb` behaves differently rather than
+by market share: API 23 (no `cmd package`, so launch uses the launcher
+read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37. A
 per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
 
 ## License

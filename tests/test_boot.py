@@ -32,6 +32,7 @@ class BootFakes:
         fake.add("adb", [
             {"match": ["devices", "-l"], "when_file": self.running, "stdout": listing_on},
             {"match": ["devices", "-l"], "stdout": listing_off},
+            {"match": ["devices"], "when_file": self.running, "stdout": listing_on},
             {"match": ["-s", "emulator-5554", "getprop", "sys.boot_completed"], "stdout": "1\n"},
             {"match": ["-s", "emulator-5556", "getprop", "sys.boot_completed"], "stdout": "1\n"},
             {"match": ["-s", "emulator-5554", "getprop"], "stdout": EMU_PROPS.format(name="tablet_api34")},
@@ -39,6 +40,7 @@ class BootFakes:
             {"match": ["-s", "emulator-5556", "emu", "kill"], "remove": self.running, "stdout": "OK: killing emulator, bye bye\n"},
             {"match": ["-s", "emulator-5554", "emu", "kill"], "stdout": "OK: killing emulator, bye bye\n"},
             {"match": ["install"], "stdout": "Success\n"},
+            {"match": ["devices"], "stdout": listing_off},
         ], directory=os.path.join(sdk, "platform-tools"))
         fake.add("emulator", [
             {"match": ["-list-avds"], "stdout": "INFO    | Storing crashdata in: /tmp/x\npixel_api35\ntablet_api34\n"},
@@ -149,6 +151,21 @@ class BootCommands(unittest.TestCase):
         self.assertFalse(os.path.exists(self.f.running))
         r = self.f.run("shutdown", "--to", "physical")
         self.assertEqual(r.returncode, 3)
+        # devdrop waited for the device to leave adb's list before reporting it stopped
+        plain = [c for c in self.fake.calls("adb") if c == ["devices"]]
+        self.assertTrue(plain, "shutdown never checked that the emulator was gone")
+
+    def test_shutdown_reports_an_emulator_that_does_not_exit(self):
+        from devdrop.device import Device
+        stuck = FakeTools()
+        self.addCleanup(stuck.close)
+        adb = stuck.add("adb", [
+            {"match": ["emu", "kill"], "stdout": "OK: killing emulator, bye bye\n"},
+            {"match": ["devices"], "stdout": "List of devices attached\nemulator-5554\tdevice\n"},
+        ])
+        dev = Device("emulator-5554", "android", "emulator", "ready")
+        with self.assertRaisesRegex(virtual.ToolError, "still running 1s after emu kill"):
+            virtual.shutdown(adb, None, dev, timeout=1)
 
 
 if __name__ == "__main__":

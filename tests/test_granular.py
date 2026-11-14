@@ -339,6 +339,27 @@ class AndroidAdbEdges(unittest.TestCase):
         self.assertEqual(recs["AAA111"]["reason"], "no launcher activity (is the app installed?)")
         self.assertEqual(recs["BBB222"]["reason"], "Error type 3")
 
+    def test_launch_on_android_6_without_cmd_uses_manifest_launcher(self):
+        # Real output of API 23: no `cmd` binary, and the shell still exits 0.
+        self.fake.add("adb", lab_rules(extra=[
+            {"match": ["-s", "AAA111", "resolve-activity"], "stdout": "/system/bin/sh: cmd: not found\n"}]))
+        apk = os.path.join(self.fake.root, "a.apk")
+        b.apk(apk, b.axml(b.manifest()), v2=True)
+        r = devdrop(self.fake, "install", apk, "--to", "AAA111", "--launch", "--json")
+        self.assertEqual(json.loads(r.stdout)["ok"], 1, r.stdout)
+        start = next(c for c in self.fake.calls("adb") if "am" in c and c[1] == "AAA111")
+        self.assertEqual(start[-1], "com.example.app/com.example.app.MainActivity")
+        # launch by package has no manifest: monkey fires the launcher intent instead.
+        self.fake.add("adb", lab_rules(extra=[
+            {"match": ["-s", "AAA111", "resolve-activity"], "stdout": "/system/bin/sh: cmd: not found\n"},
+            {"match": ["-s", "AAA111", "monkey"], "stdout": "Events injected: 1\n## Network stats: elapsed time=12ms\n"},
+            {"match": ["-s", "BBB222", "resolve-activity"], "stdout": "/system/bin/sh: cmd: not found\n"},
+            {"match": ["-s", "BBB222", "monkey"], "stdout": "** No activities found to run, monkey aborted.\n"}]))
+        r = devdrop(self.fake, "launch", "com.example.app", "--to", "AAA111,BBB222", "--json")
+        recs = {x["id"]: x for x in json.loads(r.stdout)["results"]}
+        self.assertEqual(recs["AAA111"]["result"], "ok")
+        self.assertEqual(recs["BBB222"]["reason"], "no launcher activity (is the app installed?)")
+
     def test_tool_timeout_during_install_and_launch(self):
         self.fake.add("adb", lab_rules(extra=[{"match": ["-s", "AAA111", "resolve-activity"], "sleep": 3}]))
         r = devdrop(self.fake, "launch", "com.example.app", "--to", "AAA111", "--json", env_extra=SLOW)
