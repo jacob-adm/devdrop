@@ -35,7 +35,7 @@ class StepError(Exception):
         self.reason = reason
 
 
-def _record(dev, result, stage, reason, started):
+def record(dev, result, stage, reason, started):
     return {"id": dev.id, "name": dev.name, "platform": dev.platform, "result": result,
             "stage": stage, "reason": reason, "seconds": round(time.monotonic() - started, 1)}
 
@@ -180,7 +180,7 @@ def install_one(backend, dev, report, clean=False, launch=False):
     started = time.monotonic()
     reason = preflight.check(report, dev)
     if reason:
-        return _record(dev, "skipped", "preflight", reason, started)
+        return record(dev, "skipped", "preflight", reason, started)
     try:
         if clean:
             backend.uninstall(dev, report["id"], missing_ok=True)
@@ -188,26 +188,26 @@ def install_one(backend, dev, report, clean=False, launch=False):
         if launch:
             backend.launch(dev, report["id"], report.get("launcher", ""))
     except StepError as e:
-        return _record(dev, "failed", e.stage, e.reason, started)
+        return record(dev, "failed", e.stage, e.reason, started)
     except ToolError as e:
-        return _record(dev, "failed", "tool", str(e), started)
-    return _record(dev, "ok", "launch" if launch else "install", "", started)
+        return record(dev, "failed", "tool", str(e), started)
+    return record(dev, "ok", "launch" if launch else "install", "", started)
 
 
 def by_id_one(action, backend, dev, app_id):
     started = time.monotonic()
     if dev.state != "ready":
-        return _record(dev, "skipped", "preflight", f"device is {dev.state}", started)
+        return record(dev, "skipped", "preflight", f"device is {dev.state}", started)
     try:
         if action == "launch":
             backend.launch(dev, app_id)
         else:
             backend.uninstall(dev, app_id)
     except StepError as e:
-        return _record(dev, "failed", e.stage, e.reason, started)
+        return record(dev, "failed", e.stage, e.reason, started)
     except ToolError as e:
-        return _record(dev, "failed", "tool", str(e), started)
-    return _record(dev, "ok", action, "", started)
+        return record(dev, "failed", "tool", str(e), started)
+    return record(dev, "ok", action, "", started)
 
 
 def fan_out(devices, work, jobs=None, on_done=None):

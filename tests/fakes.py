@@ -4,6 +4,9 @@
 Each stand-in is a real executable on disk that devdrop runs through
 subprocess, exactly as it runs the real tool. It answers from a rule list
 (first rule whose tokens all appear in argv wins) and logs every argv.
+Rules can depend on a marker file (when_file / unless_file) and create or
+remove one (touch / remove), so one tool's action can change what another
+reports, as when an emulator starts and adb then lists it.
 """
 
 import json
@@ -19,9 +22,18 @@ rules = json.load(open(RULES, encoding="utf-8"))
 argv = sys.argv[1:]
 with open(LOG, "a", encoding="utf-8") as f:
     f.write(json.dumps(argv) + "\n")
+import os
 for r in rules:
+    if "when_file" in r and not os.path.exists(r["when_file"]):
+        continue
+    if "unless_file" in r and os.path.exists(r["unless_file"]):
+        continue
     if all(t in argv for t in r.get("match", [])):
         time.sleep(r.get("sleep", 0))
+        if "touch" in r:
+            open(r["touch"], "w").close()
+        if "remove" in r and os.path.exists(r["remove"]):
+            os.remove(r["remove"])
         if "write_after" in r:
             path = argv[argv.index(r["write_after"]) + 1]
             with open(path, "w", encoding="utf-8") as out:

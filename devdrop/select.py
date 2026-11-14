@@ -10,7 +10,7 @@ matches it. Terms:
     api>=N  api<N  ...        Android API level (operators: >= <= > < =)
     ios>=X.Y ...              iOS version
     an alias or group from devdrop.toml
-    a device id
+    a device id, or a device's exact model or name (case-insensitive)
     a pattern with * or ?     matched against model and name
 """
 
@@ -67,7 +67,7 @@ def _term(term, cfg):
         return lambda d: d.id == cfg.devices[t]
     if any(c in t for c in "*?["):
         return lambda d: fnmatch.fnmatchcase(d.model.lower(), low) or fnmatch.fnmatchcase(d.name.lower(), low)
-    return lambda d: d.id == t
+    return lambda d: d.id == t or low in (d.model.lower(), d.name.lower())
 
 
 def select(devices, selector, cfg):
