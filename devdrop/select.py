@@ -30,9 +30,12 @@ class SelectorError(ValueError):
 def _version(text):
     parts = []
     for p in str(text).split("."):
-        if not p.isdigit():
+        m = re.match(r"\d+", p)
+        if not m:
             break
-        parts.append(int(p))
+        parts.append(int(m.group()))
+        if m.end() < len(p):        # "5b2": keep 5, stop at the suffix
+            break
     return tuple(parts)
 
 

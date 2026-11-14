@@ -112,6 +112,12 @@ iphone = "00008150-0000000000000001"
 lab = ["pixel8", "iphone"]
 ```
 
+## Settings
+
+`DEVDROP_TOOL_TIMEOUT` sets how many seconds devdrop waits for a single
+`adb` or `xcrun` call before treating the device as not responding
+(default 30). Installs and boots have their own, longer limits.
+
 ## Exit codes
 
 | Code | Meaning |

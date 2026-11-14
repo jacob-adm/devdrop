@@ -1,13 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 """Find the platform tools and run them."""
 
+import math
 import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 
-TIMEOUT = 30
+DEFAULT_TIMEOUT = 30
+
+
+def default_timeout(env=None):
+    """Seconds devdrop waits for one adb/xcrun call (DEVDROP_TOOL_TIMEOUT overrides)."""
+    env = os.environ if env is None else env
+    try:
+        value = float(env.get("DEVDROP_TOOL_TIMEOUT", DEFAULT_TIMEOUT))
+    except ValueError:
+        return DEFAULT_TIMEOUT
+    return value if math.isfinite(value) and value > 0 else DEFAULT_TIMEOUT
 
 
 class ToolError(Exception):
@@ -21,7 +32,8 @@ class Result:
     err: str
 
 
-def run(argv, timeout=TIMEOUT):
+def run(argv, timeout=None):
+    timeout = default_timeout() if timeout is None else timeout
     try:
         p = subprocess.run(argv, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout)
@@ -32,14 +44,15 @@ def run(argv, timeout=TIMEOUT):
     return Result(p.returncode, p.stdout, p.stderr)
 
 
-def sdk_roots(env=None, home=None):
+def sdk_roots(env=None, home=None, system=None):
     """Android SDK locations in the order they are tried."""
     env = os.environ if env is None else env
     home = os.path.expanduser("~") if home is None else home
+    system = system or ("windows" if os.name == "nt" else sys.platform)
     roots = [env.get("ANDROID_HOME"), env.get("ANDROID_SDK_ROOT")]
-    if sys.platform == "darwin":
+    if system == "darwin":
         roots.append(os.path.join(home, "Library", "Android", "sdk"))
-    elif os.name == "nt":
+    elif system == "windows":
         local = env.get("LOCALAPPDATA")
         roots.append(os.path.join(local, "Android", "Sdk") if local else None)
     else:

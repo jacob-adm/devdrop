@@ -53,7 +53,7 @@ class Android:
     def __init__(self, adb):
         self.adb = adb
 
-    def _adb(self, dev, *args, timeout=60):
+    def _adb(self, dev, *args, timeout=None):
         return run([self.adb, "-s", dev.id, *args], timeout=timeout)
 
     def install(self, dev, report):
