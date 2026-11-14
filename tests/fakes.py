@@ -97,7 +97,10 @@ class FakeTools:
         os.makedirs(home, exist_ok=True)
         env = {k: v for k, v in os.environ.items()
                if k not in ("ANDROID_HOME", "ANDROID_SDK_ROOT", "XDG_CONFIG_HOME")}
-        env.update(PATH=self.bin, HOME=home, USERPROFILE=home, LOCALAPPDATA=home)
+        tmp = os.path.join(self.root, "tmp")
+        os.makedirs(tmp, exist_ok=True)
+        env.update(PATH=self.bin, HOME=home, USERPROFILE=home, LOCALAPPDATA=home,
+                   TMPDIR=tmp, TMP=tmp, TEMP=tmp)
         if os.name == "nt":
             env["PATHEXT"] = ".CMD;.EXE"
         return env

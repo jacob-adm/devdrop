@@ -128,6 +128,33 @@ lab = ["pixel8", "iphone"]
 | 3 | no device matched `--to` |
 | 4 | the platform tools needed were not found |
 
+## Testing
+
+```
+python3 -m unittest discover -s tests          # unit, CLI and fuzz tests (no devices needed)
+DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v   # end to end on real devices
+```
+
+The unit suite runs devdrop as a separate process against stand-in
+`adb`, `xcrun` and `emulator` programs. `DEVDROP_FUZZ_N` sets the number
+of fuzzed builds per reader (default 10,000). Branch coverage, measured
+with coverage.py (development only):
+
+```
+python3 -m coverage run -m unittest discover -s tests
+python3 -m coverage combine && python3 -m coverage report
+```
+
+The end-to-end suite installs devdrop into a fresh virtual environment,
+builds real test apps (`tests/e2e/build_fixtures.py`: APKs with the
+Android build-tools, iOS apps with `swiftc`), boots the device matrix
+with `devdrop boot`, runs every command and failure case, checks each
+result on the device with `adb` or `simctl`, and shuts down what it
+started. It needs the Android SDK build-tools and emulator, the AVDs
+named in `DEVDROP_E2E_AVDS` (default `devdrop_api24`, `_api29`, `_api34`,
+`_api35`, `_api36`) and, on macOS, an iOS simulator runtime. A
+per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
+
 ## License
 
 Apache-2.0
