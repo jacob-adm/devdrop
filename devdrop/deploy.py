@@ -8,7 +8,7 @@ import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from devdrop import preflight
+from devdrop import bundle, preflight
 from devdrop.tools import ToolError, run
 
 INSTALL_TIMEOUT = 600
@@ -54,17 +54,32 @@ def android_failure(text):
 
 
 class Android:
-    def __init__(self, adb):
+    def __init__(self, adb, bundle=None):
         self.adb = adb
+        self.bundle = bundle            # (bundletool argv, Signing, work dir) for .aab installs
 
     def _adb(self, dev, *args, timeout=None):
         return run([self.adb, "-s", dev.id, *args], timeout=timeout)
 
     def install(self, dev, report):
+        if report["type"] == "aab":
+            return self._install_bundle(dev, report)
         r = self._adb(dev, "install", "-r", "-t", report["path"], timeout=INSTALL_TIMEOUT)
         out = r.out + r.err
         if r.rc != 0 or "Success" not in out:
             raise StepError("install", android_failure(out))
+
+    def _install_bundle(self, dev, report):
+        bundletool, sign, workdir = self.bundle
+        apks = os.path.join(workdir, re.sub(r"[^\w.-]", "_", dev.id) + ".apks")
+        r = bundle.build_apks(bundletool, self.adb, report["path"], dev.id, sign, apks)
+        if r.rc != 0:
+            raise StepError("build-apks", bundle.failure(r.out + r.err) or f"bundletool exit {r.rc}")
+        r = bundle.install_apks(bundletool, self.adb, apks, dev.id)
+        out = r.out + r.err
+        if r.rc != 0 or "INSTALL_FAILED" in out or "INSTALL_PARSE_FAILED" in out:
+            reason = android_failure(out) if _FAILURE.search(out) else bundle.failure(out)
+            raise StepError("install", reason or f"bundletool exit {r.rc}")
 
     def uninstall(self, dev, package, missing_ok=False):
         r = self._adb(dev, "uninstall", package)

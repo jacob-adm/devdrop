@@ -52,6 +52,19 @@ class Fuzz(unittest.TestCase):
             except Exception as e:   # pragma: no cover - a failure prints the case
                 self.fail(f"case {i}: {type(e).__name__}: {e} (input {data[:64].hex()}...)")
 
+    def test_protobuf_xml(self):
+        from devdrop import protoxml
+        rng = random.Random(4)
+        seeds = [b.proto_xml(b.manifest()), b.proto_xml(b.manifest(), strip_names=True)]
+        for i in range(N):
+            data = mutate(rng, rng.choice(seeds))
+            try:
+                protoxml.parse(data)
+            except axml.AxmlError:
+                pass
+            except Exception as e:   # pragma: no cover
+                self.fail(f"case {i}: {type(e).__name__}: {e} (input {data[:64].hex()}...)")
+
     def test_provisioning_profile(self):
         rng = random.Random(2)
         seed = b.mobileprovision()
@@ -71,8 +84,10 @@ class Fuzz(unittest.TestCase):
             apk, ipa = os.path.join(tmp, "s.apk"), os.path.join(tmp, "s.ipa")
             b.apk(apk, b.axml(b.manifest()), libs=("arm64-v8a",), v1=True, v2=True)
             b.ipa(ipa, b.info_plist(), b.mobileprovision())
+            aab = os.path.join(tmp, "s.aab")
+            b.aab(aab, b.manifest(), libs=[("arm64-v8a/lib.so", b"\x7fELF\x02\x01" + b"\0" * 120)])
             seeds = []
-            for path in (apk, ipa):
+            for path in (apk, ipa, aab):
                 with open(path, "rb") as f:
                     seeds.append((os.path.splitext(path)[1], f.read()))
             target = {ext: os.path.join(tmp, "case" + ext) for ext, _ in seeds}

@@ -48,9 +48,10 @@ S = {}            # shared state: devdrop path, fixtures, device ids
 REPORT = []       # every devdrop run, for the report file
 
 
-def devdrop(*args, check_json=True):
+def devdrop(*args, check_json=True, env=None):
     started = time.monotonic()
-    r = subprocess.run([S["devdrop"], *args], capture_output=True, text=True, timeout=1800)
+    r = subprocess.run([S["devdrop"], *args], capture_output=True, text=True, timeout=1800,
+                       env=dict(os.environ, **(env or {})))
     entry = {"args": list(args), "rc": r.returncode, "seconds": round(time.monotonic() - started, 1)}
     out = None
     if "--json" in args and check_json:
@@ -197,6 +198,7 @@ class A_Inspect(unittest.TestCase):
                 self.assertEqual(rc, 0)
                 self.assertEqual((rep["id"], rep["build"], rep["min_sdk"]),
                                  (PACKAGE, str(meta["version_code"]), meta["min_sdk"]))
+                self.assertEqual(rep["type"], "aab" if meta.get("bundle") else "apk")
                 self.assertEqual(bool(rep["signing"]), meta["key"] is not None)
                 self.assertEqual(rep["abis"], [meta["abi"]] if meta.get("abi") else [])
                 self.assertEqual(rep["launcher"], PACKAGE + (".Shown" if meta.get("alias") else ".Main"))
@@ -321,6 +323,24 @@ class B_Android(unittest.TestCase):
                         dump = adb(serial, "shell", "dumpsys", "package", PACKAGE)
                         mode = re.search(r"pageSizeCompat=(\d+)", dump)
                         self.assertEqual(int(mode.group(1)), 4 if warned else 0)
+
+    def test_5d_app_bundle_gets_per_device_apks(self):
+        if "app-bundle" not in S["fx"]["android"]:
+            self.skipTest("no .aab fixture (needs bundletool)")
+        ks = os.path.join(CACHE, "e2e-signing.jks")
+        rc, out, _ = devdrop("install", apk("app-bundle"), "--to", S["android"], "--clean", "--launch",
+                             "--ks", ks, "--ks-alias", "a", "--json", env={"DEVDROP_KS_PASS": "devdrop"})
+        self.assertEqual(rc, 0, out)
+        time.sleep(3)
+        for serial in S["serials"].values():
+            with self.subTest(serial=serial, api=S["api"][serial]):
+                paths = adb(serial, "shell", "pm", "path", PACKAGE)
+                self.assertIn("base.apk", paths)
+                self.assertIn("split_config.arm64_v8a.apk", paths)       # built for this device
+                self.assert_version(serial, 4)
+                self.assertTrue(adb(serial, "shell", "pidof", PACKAGE).strip())
+        for rec in out["results"]:
+            self.assertEqual(rec["warnings"], [])                       # its library is 16 KB ready
 
     def test_6_launch_uninstall_twice(self):
         devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--json")

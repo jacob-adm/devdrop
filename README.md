@@ -25,8 +25,9 @@ Either platform works without the other.
 ```
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
-devdrop inspect PATH [--json]      show what an .apk, .ipa or .app contains
+devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
+                [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
 devdrop launch APP_ID [--to SEL] [--jobs N] [--json]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 devdrop boot --to SEL [--show] [--boot-timeout S] [--json]
@@ -47,7 +48,19 @@ with a warning naming each library: on the 16 KB emulator images tested
 page-size compatibility mode, which shows a warning on first launch.
 Install failures from the device are translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
-`--launch` starts it afterwards. Each device's result prints as it
+`--launch` starts it afterwards.
+
+An `.aab` is installed through
+[bundletool](https://developer.android.com/tools/bundletool) (on `PATH`,
+or `BUNDLETOOL_JAR` with Java): for each device devdrop builds the APK
+set that device needs and installs it. The APKs are signed with `--ks`
+and `--ks-alias`, with the keystore password in `DEVDROP_KS_PASS` (and
+`DEVDROP_KEY_PASS` if the key's differs); without `--ks`, the Android
+debug keystore (`~/.android/debug.keystore`) is used if it exists.
+Passwords reach bundletool through files only the user can read, never
+on the command line. devdrop does not create keys.
+
+Each device's result prints as it
 finishes, followed by a count. With `--json`, every result also names
 the device's maker, model, kind, OS version and Android API level, so a
 failure can be traced to a device family.
@@ -76,7 +89,9 @@ simulators and never touches physical devices.
 
 - APK: package, version name and code, minimum and target SDK, native
   ABIs, whether it is debuggable, the launcher activity, and signing
-  schemes (v1, v2 or later). Android App Bundles (.aab) are not read yet.
+  schemes (v1, v2 or later).
+- Android App Bundle (.aab): the same fields, read from the bundle's
+  protobuf manifest. A bundle is signed later, when APKs are built from it.
 - APK native code and 16 KB memory pages: for each 64-bit library,
   whether every ELF LOAD segment is 16 KB aligned and, if it is stored
   uncompressed, whether it starts on a 16 KB boundary in the APK.
@@ -137,7 +152,7 @@ lab = ["pixel8", "iphone"]
 | 1 | a device was skipped or failed, a platform tool failed, or `doctor` found something to fix |
 | 2 | usage or configuration error, or a build devdrop cannot read |
 | 3 | no device matched `--to` |
-| 4 | the platform tools needed were not found |
+| 4 | the platform tools needed were not found (adb, xcrun, or bundletool for an .aab) |
 
 ## Testing
 

@@ -178,3 +178,61 @@ def ipa(path, info, profile=None, app="Example.app"):
         z.writestr(f"Payload/{app}/Example", b"\xcf\xfa\xed\xfe")
         if profile is not None:
             z.writestr(f"Payload/{app}/embedded.mobileprovision", profile)
+
+
+# ---------------------------------------------------------------- App Bundles
+
+def _pb_varint(n):
+    out = b""
+    while True:
+        byte = n & 0x7F
+        n >>= 7
+        out += bytes([byte | (0x80 if n else 0)])
+        if not n:
+            return out
+
+
+def _pb(number, wire, payload):
+    key = _pb_varint(number << 3 | wire)
+    if wire == 0:
+        return key + _pb_varint(payload)
+    return key + _pb_varint(len(payload)) + payload
+
+
+def proto_xml(root, strip_names=False):
+    """The aapt2 protobuf XmlNode for the same element tuples `manifest()` returns."""
+    def attribute(name, kind, value):
+        body = b""
+        if not (strip_names and name in IDS):
+            body += _pb(2, 2, name.encode())
+        if kind == STR:
+            body += _pb(3, 2, str(value).encode())
+        elif kind in (INT, HEX):
+            body += _pb(3, 2, str(value).encode()) + _pb(6, 2, _pb(7, 2, _pb(6, 0, value & 0xFFFFFFFF)))
+        elif kind == BOOL:
+            body += _pb(3, 2, b"true" if value else b"false") + _pb(6, 2, _pb(7, 2, _pb(8, 0, int(value))))
+        elif kind == REF:
+            body += _pb(6, 2, _pb(1, 2, _pb(2, 0, value)))
+        if name in IDS:
+            body += _pb(5, 0, IDS[name])
+        return body
+
+    def node(el):
+        tag, attrs, children = el
+        body = _pb(3, 2, tag.encode())
+        for a in attrs:
+            body += _pb(4, 2, attribute(*a))
+        for c in children:
+            body += _pb(5, 2, node(c))
+        return _pb(1, 2, body) + _pb(3, 2, b"")         # element + an empty source position
+
+    return node(root)
+
+
+def aab(path, manifest_tuple, libs=(), strip_names=False):
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("BundleConfig.pb", b"")
+        z.writestr("base/manifest/AndroidManifest.xml", proto_xml(manifest_tuple, strip_names))
+        z.writestr("base/dex/classes.dex", b"dex\n035\x00")
+        for name, data in libs:
+            z.writestr(f"base/lib/{name}", data)

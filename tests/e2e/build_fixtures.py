@@ -156,7 +156,38 @@ def build_android(out, work):
             shutil.copy(aligned, dest)
         built[name] = {"path": dest, "version_code": code, "min_sdk": min_sdk, "key": key, **extra}
     built.update(build_native(out, work, bt, jar))
+    built.update(build_bundle(out, work, bt, jar))
+    shutil.copy(keystore(work, "a"), os.path.join(out, "e2e-signing.jks"))   # alias a, password devdrop
     return built
+
+
+def build_bundle(out, work, bt, jar):
+    """A real .aab: aapt2 proto-format manifest, dex and the 16 KB arm64 library, via bundletool."""
+    bundletool = shutil.which("bundletool")
+    lib = os.path.join(work, "native", "app-native16k.so")
+    if bundletool is None or not os.path.exists(lib):
+        print("android bundle: needs bundletool and the native library; skipped", file=sys.stderr)
+        return {}
+    manifest = os.path.join(work, "bundle.xml")
+    with open(manifest, "w") as f:
+        f.write(MANIFEST.format(package=PACKAGE, debuggable="true", extract="", main_filter=LAUNCHER,
+                                aliases="").replace("<manifest ", '<manifest android:versionCode="4" ', 1))
+    proto = os.path.join(work, "bundle.proto.apk")
+    sh(os.path.join(bt, "aapt2"), "link", "--proto-format", "-o", proto, "-I", jar, "--manifest", manifest,
+       "--min-sdk-version", "23", "--target-sdk-version", "35", "--version-code", "4", "--version-name", "1.0.4")
+    module = os.path.join(work, "base.zip")
+    with zipfile.ZipFile(proto) as src, zipfile.ZipFile(module, "w") as z:
+        for name in src.namelist():
+            target = "manifest/AndroidManifest.xml" if name == "AndroidManifest.xml" else name
+            z.writestr(target, src.read(name))
+        z.write(os.path.join(work, "classes.dex"), "dex/classes.dex")
+        z.write(lib, "lib/arm64-v8a/libe2e.so")
+    dest = os.path.join(out, "app-bundle.aab")
+    if os.path.exists(dest):
+        os.remove(dest)
+    sh(bundletool, "build-bundle", f"--modules={module}", f"--output={dest}")
+    return {"app-bundle": {"path": dest, "version_code": 4, "min_sdk": 23, "key": None, "abi": "arm64-v8a",
+                           "bundle": True}}
 
 
 def build_native(out, work, bt, jar):
