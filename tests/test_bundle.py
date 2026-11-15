@@ -6,6 +6,7 @@ import os
 import stat
 import tempfile
 import unittest
+from unittest import mock
 
 from devdrop import artifact, axml, bundle, protoxml
 from tests import builders as b
@@ -100,17 +101,14 @@ class Signing(unittest.TestCase):
                 bundle.signing(args[0], args[1], self.dir, env=args[2])
 
     def test_debug_keystore_or_a_clear_error(self):
-        home = os.environ.get("HOME")
-        try:
-            os.environ["HOME"] = self.dir
+        # "~" is HOME on Unix and USERPROFILE on Windows: point both at the temp dir.
+        with mock.patch.dict(os.environ, {"HOME": self.dir, "USERPROFILE": self.dir}):
             with self.assertRaisesRegex(bundle.BundleError, "needs a signing key"):
                 bundle.signing(None, None, self.dir, env={})
             os.makedirs(os.path.join(self.dir, ".android"))
             open(os.path.join(self.dir, ".android", "debug.keystore"), "w").close()
             s = bundle.signing(None, None, self.dir, env={})
             self.assertEqual(s.alias, "androiddebugkey")
-        finally:
-            os.environ["HOME"] = home
 
     def test_find_bundletool(self):
         fake = FakeTools()
@@ -125,9 +123,10 @@ class Signing(unittest.TestCase):
         with self.assertRaisesRegex(bundle.BundletoolMissing, "bundletool not found"):
             bundle.find_bundletool(empty)
         java = fake.add("java", [{"match": []}])
-        self.assertEqual(bundle.find_bundletool(dict(empty, BUNDLETOOL_JAR=jar)), [java, "-jar", jar])
+        found = bundle.find_bundletool(dict(empty, BUNDLETOOL_JAR=jar))
+        self.assertEqual([os.path.normcase(found[0])] + found[1:], [os.path.normcase(java), "-jar", jar])
         tool = fake.add("bundletool", [{"match": []}])
-        self.assertEqual(bundle.find_bundletool(empty), [tool])
+        self.assertEqual([os.path.normcase(p) for p in bundle.find_bundletool(empty)], [os.path.normcase(tool)])
 
 
 class InstallBundle(unittest.TestCase):
