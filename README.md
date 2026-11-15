@@ -98,6 +98,9 @@ devdrop boot --to my_avd                 # start a stopped emulator by name
 - [Reports for CI](https://github.com/jacob-adm/devdrop/blob/main/docs/ci.md): JSON and JUnit output.
 - [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md): the unit and end-to-end suites, and the
   devices devdrop has been tested on.
+- [Security](https://github.com/jacob-adm/devdrop/blob/main/SECURITY.md): what devdrop runs, what it guards against, and how to
+  report a vulnerability.
+- [Contributing](https://github.com/jacob-adm/devdrop/blob/main/CONTRIBUTING.md): tests and how changes reach `main`.
 - [Changelog](https://github.com/jacob-adm/devdrop/blob/main/CHANGELOG.md)
 
 ## License
