@@ -9,6 +9,14 @@ dependencies.
 
 Status: early development (0.1.0 not yet released).
 
+## Install
+
+From a clone of this repository:
+
+```
+python3 -m pip install .
+```
+
 ## Requirements
 
 - Python 3.11 or later
