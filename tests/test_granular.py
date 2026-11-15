@@ -542,7 +542,7 @@ class VirtualCommands(unittest.TestCase):
         self.assertEqual(f.run("boot", "--to", ",").returncode, 2)
         self.assertEqual(f.run("shutdown", "--to", ",").returncode, 2)
         os.remove(os.path.join(self.fake.root, "sdk", "emulator",
-                               "emulator.cmd" if os.name == "nt" else "emulator"))
+                               "emulator.exe" if os.name == "nt" else "emulator"))
         r = f.run("boot", "--to", "x*", "--json")       # no AVDs listed without the emulator: nothing matches
         self.assertEqual(r.returncode, 3)
 

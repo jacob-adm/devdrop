@@ -125,8 +125,9 @@ class DevicesCommand(unittest.TestCase):
         self.fake.add("adb", adb_rules())
         r = devdrop(self.fake, "devices", "--json")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(json.loads(r.stdout)["backends"]["android"]["tool"],
-                         os.path.join(self.fake.bin, "adb.cmd" if os.name == "nt" else "adb"))
+        # normcase: Windows lookups may return the extension in PATHEXT's case (adb.EXE).
+        self.assertEqual(os.path.normcase(json.loads(r.stdout)["backends"]["android"]["tool"]),
+                         os.path.normcase(os.path.join(self.fake.bin, "adb.exe" if os.name == "nt" else "adb")))
 
     def test_no_tools_exits_4(self):
         r = devdrop(self.fake, "devices")

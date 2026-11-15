@@ -125,9 +125,10 @@ class Signing(unittest.TestCase):
         with self.assertRaisesRegex(bundle.BundletoolMissing, "bundletool not found"):
             bundle.find_bundletool(empty)
         java = fake.add("java", [{"match": []}])
-        self.assertEqual(bundle.find_bundletool(dict(empty, BUNDLETOOL_JAR=jar)), [java, "-jar", jar])
+        found = bundle.find_bundletool(dict(empty, BUNDLETOOL_JAR=jar))
+        self.assertEqual([os.path.normcase(found[0])] + found[1:], [os.path.normcase(java), "-jar", jar])
         tool = fake.add("bundletool", [{"match": []}])
-        self.assertEqual(bundle.find_bundletool(empty), [tool])
+        self.assertEqual([os.path.normcase(p) for p in bundle.find_bundletool(empty)], [os.path.normcase(tool)])
 
 
 class InstallBundle(unittest.TestCase):
