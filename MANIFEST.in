@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-include CHANGELOG.md LICENSE README.md
+include CHANGELOG.md CONTRIBUTING.md LICENSE README.md SECURITY.md
 graft docs
 graft tests
 global-exclude *.py[cod] __pycache__
