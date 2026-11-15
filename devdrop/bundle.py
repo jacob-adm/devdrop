@@ -14,12 +14,12 @@ from dataclasses import dataclass
 
 from devdrop.tools import run
 
-INSTALL_TIMEOUT = 600
+INSTALL_TIMEOUT = 600  # seconds: building APKs from a large bundle is slow
 DEBUG_KEYSTORE = os.path.join("~", ".android", "debug.keystore")
 
 
 class BundleError(Exception):
-    pass
+    """An .aab cannot be installed as asked: no signing key, missing keystore or password."""
 
 
 class BundletoolMissing(BundleError):
@@ -28,6 +28,8 @@ class BundletoolMissing(BundleError):
 
 @dataclass
 class Signing:
+    """Keystore, key alias and the two password files bundletool reads."""
+
     keystore: str
     alias: str
     ks_pass_file: str
@@ -53,6 +55,11 @@ def find_bundletool(env=None):
 
 
 def _secret_file(directory, name, value):
+    """Write a secret to a new file only the user can read (0600); return its path.
+
+    bundletool accepts "file:PATH" for passwords, which keeps them out of argv
+    and therefore out of `ps` output.
+    """
     path = os.path.join(directory, name)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -81,13 +88,14 @@ def signing(keystore, alias, workdir, env=None):
         if not os.path.isfile(keystore):
             raise BundleError("an .aab needs a signing key: pass --ks and --ks-alias, or create the Android "
                               f"debug keystore at {DEBUG_KEYSTORE}")
+        # Android Studio's debug key: well-known alias and passwords, not a secret.
         alias, ks_pass, key_pass = "androiddebugkey", "android", "android"
     return Signing(keystore, alias, _secret_file(workdir, "ks.pass", ks_pass),
                    _secret_file(workdir, "key.pass", key_pass))
 
 
 def failure(text):
-    """bundletool's own error line, without its version prefix."""
+    """bundletool's own error line, without its version prefix; None when it printed none."""
     for line in text.splitlines():
         m = re.search(r"Error: (.+)", line)
         if m:
@@ -96,6 +104,7 @@ def failure(text):
 
 
 def build_apks(bundletool, adb, aab, serial, sign, out):
+    """Build the APK set for one connected device (its ABI, density, language, API) into out."""
     argv = bundletool + [
         "build-apks", f"--bundle={aab}", f"--output={out}", "--overwrite", "--connected-device",
         f"--device-id={serial}", f"--adb={adb}", f"--ks={sign.keystore}", f"--ks-key-alias={sign.alias}",
@@ -104,5 +113,6 @@ def build_apks(bundletool, adb, aab, serial, sign, out):
 
 
 def install_apks(bundletool, adb, apks, serial):
+    """Install a built APK set on one device."""
     argv = bundletool + ["install-apks", f"--apks={apks}", f"--device-id={serial}", f"--adb={adb}"]
     return run(argv, timeout=INSTALL_TIMEOUT)

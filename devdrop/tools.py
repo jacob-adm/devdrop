@@ -8,7 +8,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-DEFAULT_TIMEOUT = 30
+DEFAULT_TIMEOUT = 30  # seconds for one adb/xcrun call; installs and boots pass their own
 
 
 def default_timeout(env=None):
@@ -17,7 +17,8 @@ def default_timeout(env=None):
     try:
         value = float(env.get("DEVDROP_TOOL_TIMEOUT", DEFAULT_TIMEOUT))
     except ValueError:
-        return DEFAULT_TIMEOUT
+        return DEFAULT_TIMEOUT          # not a number: fall back, never crash
+    # Reject nan, inf, zero and negatives: each would mean "never" or "instantly".
     return value if math.isfinite(value) and value > 0 else DEFAULT_TIMEOUT
 
 
@@ -27,14 +28,22 @@ class ToolError(Exception):
 
 @dataclass
 class Result:
+    """Exit code and decoded output of one finished tool run."""
+
     rc: int
     out: str
     err: str
 
 
 def run(argv, timeout=None):
+    """Run a tool and capture its output; never raises on a non-zero exit.
+
+    Raises ToolError when the program is missing or exceeds the timeout,
+    so callers handle "could not ask" apart from "asked and it said no".
+    """
     timeout = default_timeout() if timeout is None else timeout
     try:
+        # errors="replace": device output is not always valid UTF-8; a bad byte must not crash a run.
         p = subprocess.run(argv, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout)
     except FileNotFoundError:
@@ -49,6 +58,7 @@ def sdk_roots(env=None, home=None, system=None):
     env = os.environ if env is None else env
     home = os.path.expanduser("~") if home is None else home
     system = system or ("windows" if os.name == "nt" else sys.platform)
+    # Explicit settings win; then each OS's Android Studio default location.
     roots = [env.get("ANDROID_HOME"), env.get("ANDROID_SDK_ROOT")]
     if system == "darwin":
         roots.append(os.path.join(home, "Library", "Android", "sdk"))
@@ -57,7 +67,7 @@ def sdk_roots(env=None, home=None, system=None):
         roots.append(os.path.join(local, "Android", "Sdk") if local else None)
     else:
         roots.append(os.path.join(home, "Android", "Sdk"))
-    return [r for r in roots if r]
+    return [r for r in roots if r]      # unset entries dropped
 
 
 def find_adb(env=None, home=None):
