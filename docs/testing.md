@@ -1,0 +1,61 @@
+# Testing
+
+How devdrop is tested, and on which devices.
+
+```
+python3 -m unittest discover -s tests          # unit, CLI and fuzz tests (no devices needed)
+DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v   # end to end on emulators and simulators
+DEVDROP_E2E=1 DEVDROP_E2E_IPA=app.ipa DEVDROP_E2E_ANCHOR=com.example.other \
+    python3 -m unittest tests.e2e.test_physical -v           # end to end on an attached iPhone
+```
+
+The iPhone test needs a build signed with a development profile that
+lists the phone, and a second app from the same team left installed:
+iOS withdraws the trust in a team when its last app is removed. The
+test's docstring explains both.
+
+`ci/linux.sh` runs the unit suite on Linux in Docker (Python 3.11 and
+3.13 by default, `DEVDROP_LINUX_PYTHONS` to change), using only the files
+git tracks and no network.
+
+The unit suite runs devdrop as a separate process against stand-in
+`adb`, `xcrun` and `emulator` programs. `DEVDROP_FUZZ_N` sets the number
+of fuzzed builds per reader (default 10,000). Branch coverage, measured
+with coverage.py (development only):
+
+```
+python3 -m coverage run -m unittest discover -s tests
+python3 -m coverage combine && python3 -m coverage report
+```
+
+The end-to-end suite installs devdrop into a fresh virtual environment,
+builds real test apps (`tests/e2e/build_fixtures.py`: APKs with the
+Android build-tools, iOS apps with `swiftc`), boots the device matrix
+with `devdrop boot`, runs every command and failure case, checks each
+result on the device with `adb` or `simctl`, and shuts down what it
+started. It needs the Android SDK build-tools and emulator, the AVDs
+named in `DEVDROP_E2E_AVDS` and, on macOS, an iOS simulator runtime.
+The default AVDs are chosen where `adb` behaves differently rather than
+by market share: API 23 (no `cmd package`, so launch uses the launcher
+read from the manifest), 24, 29, 29 with 1 GB of RAM, 34, 35, 36 and 37,
+plus 16 KB page-size images of 35 and 37.
+On iOS it uses one iPhone simulator per installed runtime; install an
+older runtime too (for example `xcodebuild -downloadPlatform iOS
+-buildVersion 18.5`) to test more than the current iOS. Quick-boot
+snapshots of the emulators the run started are deleted afterwards, so
+repeated runs do not fill the disk. A
+per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
+
+## Tested on
+
+- Android emulators (Google system images, arm64): API 23, 24, 29 (also
+  with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
+  API 35 and 37.
+- iOS simulators: iOS 18.5 and 26.3.
+- A physical iPhone on iOS 26: a development-signed build inspected
+  (its real provisioning profile), installed, launched with `--logs`
+  and `--junit`, and uninstalled, each checked on the phone with
+  devicectl (`tests/e2e/test_physical.py`).
+- Not yet tested on physical Android phones, including vendor builds such
+  as Samsung One UI or Xiaomi HyperOS, whose install prompts and
+  restrictions differ from Google's images.
