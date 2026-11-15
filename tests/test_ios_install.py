@@ -110,6 +110,20 @@ class FailureText(unittest.TestCase):
                          "(unlock the device and retry)")
 
 
+    def test_untrusted_developer(self):
+        # devicectl's output on an iPhone that has not yet trusted a new development team.
+        text = (
+            "ERROR: The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712))\n"
+            "       BundleIdentifier = com.example.app\n"
+            "           The request to open \"com.example.app\" failed. "
+            "(FBSOpenApplicationServiceErrorDomain error 1 (0x01))\n"
+            "           NSLocalizedFailureReason = The request was denied by service delegate (SBMainWorkspace) "
+            "for reason: Security (\"Unable to launch com.example.app because it has an invalid code "
+            "signature, inadequate entitlements or its profile has not been explicitly trusted by the user\").\n")
+        self.assertEqual(deploy.ios_failure(text),
+                         "The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712)) "
+                         "(trust the developer on the device: Settings > General > VPN & Device Management)")
+
 class IosInstallCommand(unittest.TestCase):
     def setUp(self):
         self.fake = FakeTools()
