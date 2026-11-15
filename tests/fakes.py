@@ -19,12 +19,14 @@ import zipfile
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
 _SCRIPT = r'''
-import json, sys, time
+import json, os, sys, time
 rules = json.load(open(RULES, encoding="utf-8"))
 argv = sys.argv[1:]
-with open(LOG, "a", encoding="utf-8") as f:
-    f.write(json.dumps(argv) + "\n")
-import os
+# One file per call: devdrop runs tools in parallel, and on Windows concurrent appends to
+# one shared file can interleave. Names sort by time, then process id.
+os.makedirs(LOG, exist_ok=True)
+with open(os.path.join(LOG, "%020d-%010d.json" % (time.time_ns(), os.getpid())), "w", encoding="utf-8") as f:
+    f.write(json.dumps(argv))
 for r in rules:
     if "when_file" in r and not os.path.exists(r["when_file"]):
         continue
@@ -89,7 +91,7 @@ class FakeTools:
         directory = directory or self.bin
         os.makedirs(directory, exist_ok=True)
         rules_path = os.path.join(self.root, f"{name}.rules.json")
-        log_path = os.path.join(self.root, f"{name}.log")
+        log_path = os.path.join(self.root, f"{name}.calls")
         with open(rules_path, "w", encoding="utf-8") as f:
             json.dump(rules, f)
         script = os.path.join(self.root, f"{name}_fake.py")
@@ -106,11 +108,14 @@ class FakeTools:
         return exe
 
     def calls(self, name):
-        path = os.path.join(self.root, f"{name}.log")
-        if not os.path.exists(path):
+        path = os.path.join(self.root, f"{name}.calls")
+        if not os.path.isdir(path):
             return []
-        with open(path, encoding="utf-8") as f:
-            return [json.loads(line) for line in f]
+        calls = []
+        for entry in sorted(os.listdir(path)):          # call order (parallel calls: any order)
+            with open(os.path.join(path, entry), encoding="utf-8") as f:
+                calls.append(json.loads(f.read()))
+        return calls
 
     def env(self):
         """An environment where only the stand-ins exist: no real SDK or Xcode."""
