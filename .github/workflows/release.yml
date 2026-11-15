@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Publishes a version tag to PyPI through trusted publishing: no token is stored anywhere.
 # The publish job runs in the "pypi" environment, which waits for the owner's approval.
+# It runs only when the repository variable PUBLISH_TO_PYPI is "true". Unset, a tag
+# still builds and checks the package but publishes nothing.
 name: release
 
 on:
@@ -33,6 +35,7 @@ jobs:
 
   publish:
     needs: build
+    if: vars.PUBLISH_TO_PYPI == 'true'
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:

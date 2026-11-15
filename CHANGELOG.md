@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-11-15
 
 First release. devdrop installs one mobile build on every attached
 Android and iOS device, emulator and simulator, with the platform tools
@@ -23,3 +23,9 @@ already on the machine and no Python dependencies.
   as they appear.
 - `--to` selectors (platform, kind, API or iOS version, names, groups,
   ids, patterns) and `devdrop.toml` aliases and groups.
+- `--logs DIR` on `install --launch` and `launch`: watches each app after
+  it starts, reports a crash with its cause, and saves each device's log.
+- `--junit FILE`: one JUnit testcase per device, for CI dashboards.
+- Tested end to end on Android emulators (API 23 to 37, including 16 KB
+  page-size images), iOS 18.5 and 26.3 simulators, and a physical iPhone
+  with a development-signed build.
