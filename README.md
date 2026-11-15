@@ -179,6 +179,14 @@ lab = ["pixel8", "iphone"]
 `adb` or `xcrun` call before treating the device as not responding
 (default 30). Installs and boots have their own, longer limits.
 
+## Reports for CI
+
+`--json` prints every device's result. `--junit FILE` (install, launch,
+uninstall, boot, shutdown) also writes JUnit XML with one testcase per
+device: skipped and failed devices carry devdrop's reason, and the
+device's details, warnings and log path are in its output section, so
+any CI dashboard shows which devices failed and why.
+
 ## Exit codes
 
 | Code | Meaning |

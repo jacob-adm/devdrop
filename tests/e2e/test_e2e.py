@@ -495,9 +495,16 @@ class D_Everything(unittest.TestCase):
         self.assertIn("devicectl found", r.stdout)
         devdrop("install", apk("app-v1"), "--to", S["android"], "--json")
         devdrop("install", ios("ios-sim"), "--to", ",".join(S["sims"]), "--json")
-        rc, out, _ = devdrop("launch", PACKAGE, "--to", ",".join([S["android"]] + S["sims"]), "--json")
+        report = os.path.join(CACHE, "e2e-junit.xml")
+        rc, out, _ = devdrop("launch", PACKAGE, "--to", ",".join([S["android"]] + S["sims"]), "--json",
+                             "--junit", report)
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["ok"], len(S["serials"]) + len(S["sims"]))
+        import xml.etree.ElementTree as ET
+        suite = ET.parse(report).getroot().find("testsuite")
+        self.assertEqual((suite.get("tests"), suite.get("failures")), (str(out["ok"]), "0"))
+        classes = {c.get("classname") for c in suite.findall("testcase")}
+        self.assertTrue({"android.emulator", "ios.simulator"} <= classes or not S["sims"])
 
 
 if __name__ == "__main__":
