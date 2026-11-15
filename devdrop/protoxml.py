@@ -28,6 +28,7 @@ MAX_DEPTH = 64
 
 
 def _varint(buf, i):
+    """Decode a base-128 varint at i; return (value, next index). Over 10 bytes is malformed."""
     result = shift = 0
     while True:
         if i >= len(buf) or shift > 63:
@@ -62,7 +63,7 @@ def fields(buf):
                 raise AxmlError("truncated protobuf fixed32")
             value, i = buf[i:i + 4], i + 4
         else:
-            raise AxmlError(f"unsupported protobuf wire type {wire}")
+            raise AxmlError(f"unsupported protobuf wire type {wire}")   # 3/4: deprecated groups
         yield number, wire, value
 
 
@@ -85,6 +86,7 @@ def _compiled(item):
 
 
 def _attribute(buf):
+    """One XmlAttribute as (key, value): key by resource id when known, value typed when compiled."""
     name = text = ""
     resource_id = None
     typed = None
@@ -102,12 +104,13 @@ def _attribute(buf):
 
 
 def _element(buf, depth):
+    """One XmlElement and its children as an Element; depth-limited against crafted nesting."""
     if depth > MAX_DEPTH:
         raise AxmlError("protobuf XML nested too deeply")
     name, attrs, children = "", {}, []
     for number, wire, value in fields(buf):
         if wire != 2:
-            continue
+            continue                    # every field used here is length-delimited
         if number == EL_NAME:
             name = value.decode("utf-8", "replace")
         elif number == EL_ATTRIBUTE:
@@ -123,6 +126,7 @@ def _element(buf, depth):
 
 
 def _node(buf, depth=0):
+    """The element inside an XmlNode, or None when the node is text."""
     for number, wire, value in fields(buf):
         if number == NODE_ELEMENT and wire == 2:
             return _element(value, depth)

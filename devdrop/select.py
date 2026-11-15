@@ -24,10 +24,11 @@ _CMP = re.compile(r"^(api|ios)(>=|<=|>|<|=)(\d+(?:\.\d+)*)$")
 
 
 class SelectorError(ValueError):
-    pass
+    """The --to value has no usable terms."""
 
 
 def _version(text):
+    """Leading numeric parts of a version as a tuple: "18.5b" -> (18, 5), "26.1" -> (26, 1)."""
     parts = []
     for p in str(text).split("."):
         m = re.match(r"\d+", p)
@@ -49,20 +50,23 @@ def _term(term, cfg):
         return lambda d: d.platform == low
     if low in KINDS:
         return lambda d: d.kind == KINDS[low]
-    m = _CMP.match(low)
+    m = _CMP.match(low)                 # api>=30, ios<18.2, ...
     if m:
         field, op, value = m.group(1), _OPS[m.group(2)], m.group(3)
         if field == "api":
             return lambda d: d.platform == "android" and d.api is not None and op(d.api, int(value))
+        # Compare only as many parts as the term gives: ios=26 matches 26.0, 26.1, 26.3.1.
         want = _version(value)
         n = len(want)
 
         def ios_cmp(d):
+            """True for an iOS device whose version satisfies the comparison."""
             if d.platform != "ios" or not _version(d.os_version):
                 return False
             have = (_version(d.os_version) + (0,) * n)[:n]
             return op(have, want)
         return ios_cmp
+    # Config names are case-sensitive, checked before ids and patterns.
     if t in cfg.groups:
         ids = {cfg.devices[a] for a in cfg.groups[t]}
         return lambda d: d.id in ids
@@ -70,6 +74,8 @@ def _term(term, cfg):
         return lambda d: d.id == cfg.devices[t]
     if any(c in t for c in "*?["):
         return lambda d: fnmatch.fnmatchcase(d.model.lower(), low) or fnmatch.fnmatchcase(d.name.lower(), low)
+    # Anything else: an exact id, or an exact model or name ignoring case. Matching
+    # nothing is not an error here; the caller reports an empty selection.
     return lambda d: d.id == t or low in (d.model.lower(), d.name.lower())
 
 
@@ -79,4 +85,5 @@ def select(devices, selector, cfg):
     if not terms:
         raise SelectorError("empty --to selector")
     preds = [_term(t, cfg) for t in terms]
+    # A device is chosen when any term matches (terms are OR-ed).
     return [d for d in devices if any(p(d) for p in preds)]

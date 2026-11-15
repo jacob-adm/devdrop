@@ -20,10 +20,16 @@ def _text(value):
     return value if isinstance(value, str) else str(value)
 
 
-SIG_BLOCK_MAGIC = b"APK Sig Block 42"
+SIG_BLOCK_MAGIC = b"APK Sig Block 42"   # ends the APK Signing Block (v2+ signatures)
 
 
 def inspect(path, now=None):
+    """Report what a build contains, as a dict, without any platform tool.
+
+    Dispatches on type: .app directory, .apk, .ipa, .aab. `now` fixes the
+    clock for profile-expiry checks in tests. Raises ArtifactError for
+    anything unreadable, with the path and the cause.
+    """
     if os.path.isdir(path) and not path.rstrip("/\\").endswith(".app"):
         raise ArtifactError(f"{path}: a directory must be an .app bundle")
     if not os.path.exists(path):
@@ -39,7 +45,7 @@ def inspect(path, now=None):
         if lower.endswith(".aab"):
             return _aab(path)
     except ArtifactError:
-        raise
+        raise                           # already worded for the user
     except zipfile.BadZipFile as e:
         raise ArtifactError(f"{path}: not a valid zip archive ({e})")
     except axml.AxmlError as e:
@@ -55,6 +61,7 @@ def inspect(path, now=None):
 # ---------------------------------------------------------------- Android
 
 def _int_or_codename(value):
+    """SDK level as int when numeric; otherwise the text as found (a preview codename)."""
     if isinstance(value, int):
         return value
     if isinstance(value, str) and value.isdigit():
@@ -63,16 +70,23 @@ def _int_or_codename(value):
 
 
 def _apk_signing(path, names):
+    """Signature schemes present: "v1" (JAR signing) and/or "v2+" (APK Signing Block).
+
+    Empty list: the APK is unsigned and Android will refuse it.
+    """
+    # v1: a .SF signature file under META-INF/.
     v1 = any(n.startswith("META-INF/") and n.upper().endswith(".SF") for n in names)
     v2 = False
     with open(path, "rb") as f:
         f.seek(0, os.SEEK_END)
         size = f.tell()
+        # The End of Central Directory record sits in the last 22 bytes + up to 64 KB of comment.
         f.seek(max(0, size - 65557))
         tail = f.read()
     eocd = tail.rfind(b"PK\x05\x06")
     if eocd >= 0 and eocd + 20 <= len(tail):
         cd_offset = struct.unpack_from("<I", tail, eocd + 16)[0]
+        # v2+: the signing block sits right before the central directory and ends with its magic.
         if cd_offset >= 16:
             with open(path, "rb") as f:
                 f.seek(cd_offset - 16)
@@ -84,6 +98,7 @@ def _apk_signing(path, names):
 def _launcher(app):
     """First enabled activity or alias, in manifest order, that the launcher shows."""
     for act in app.children:
+        # A disabled alias is invisible to the launcher: picking it makes `am start` fail.
         if act.tag not in ("activity", "activity-alias") or act.attrs.get("enabled") is False:
             continue
         for f in act.find_all("intent-filter"):
@@ -95,11 +110,12 @@ def _launcher(app):
 
 
 PAGE_16K = 16384
-ABIS_64 = ("arm64-v8a", "x86_64")
+ABIS_64 = ("arm64-v8a", "x86_64")   # 16 KB pages exist only on 64-bit devices
 
 
 def elf_load_align(data):
     """Smallest PT_LOAD alignment of a 64-bit little-endian ELF, or None if not one."""
+    # ELF magic, ELFCLASS64 (byte 4 = 2), little-endian (byte 5 = 1); anything else: None.
     if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
         return None
     phoff = struct.unpack_from("<Q", data, 0x20)[0]
@@ -108,10 +124,10 @@ def elf_load_align(data):
     for i in range(count):
         at = phoff + i * entsize
         if at + 56 > len(data):
-            break
+            break                       # truncated header table: use what was read
         if struct.unpack_from("<I", data, at)[0] == 1:          # PT_LOAD
             aligns.append(struct.unpack_from("<Q", data, at + 0x30)[0])
-    return min(aligns) if aligns else None
+    return min(aligns) if aligns else None   # the weakest segment decides readiness
 
 
 def _data_offset(f, info):
@@ -135,11 +151,12 @@ def _page_16k(path, z):
     with open(path, "rb") as f:
         for info in z.infolist():
             parts = info.filename.split("/")
+            # Only lib/<64-bit abi>/<name>.so; 32-bit code never runs on a 16 KB device.
             if len(parts) != 3 or parts[0] != "lib" or parts[1] not in ABIS_64 or not parts[2].endswith(".so"):
                 continue
             align = elf_load_align(z.read(info))
             stored = info.compress_type == zipfile.ZIP_STORED
-            zip_ok = None
+            zip_ok = None                   # compressed: extracted at install, zip offset irrelevant
             if stored:
                 offset = _data_offset(f, info)
                 zip_ok = offset is not None and offset % PAGE_16K == 0
@@ -156,12 +173,13 @@ def _android_report(kind, path, root, lib_names, page_16k, signing):
     sdk = next(root.find_all("uses-sdk"), None)
     app = next(root.find_all("application"), None)
     package = root.attrs.get("package", "")
+    # Launcher names may be relative (".Main" or "Main"); make them fully qualified for `am start`.
     launcher = _launcher(app) if app else ""
     if launcher.startswith("."):
         launcher = package + launcher
     elif launcher and "." not in launcher:      # bare class name: relative to the package
         launcher = f"{package}.{launcher}"
-    min_sdk = _int_or_codename(sdk.attrs.get("minSdkVersion", 1)) if sdk else 1
+    min_sdk = _int_or_codename(sdk.attrs.get("minSdkVersion", 1)) if sdk else 1   # Android's default is 1
     return {
         "type": kind,
         "platform": "android",
@@ -183,11 +201,12 @@ def _android_report(kind, path, root, lib_names, page_16k, signing):
 
 def _libs(names, prefix):
     """Native libraries directly under <prefix>lib/<abi>/."""
-    depth = prefix.count("/") + 3
+    depth = prefix.count("/") + 3      # lib/<abi>/<file> below the prefix: nothing nested deeper
     return [n for n in names if n.startswith(prefix + "lib/") and n.endswith(".so") and n.count("/") == depth - 1]
 
 
 def _apk(path):
+    """Report for an .apk: binary manifest, native libraries, 16 KB readiness, signing."""
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
         if "AndroidManifest.xml" not in names:
@@ -220,7 +239,12 @@ def _aab(path):
 # ---------------------------------------------------------------- iOS
 
 def profile_from_bytes(data, now=None):
-    """The plist inside an embedded.mobileprovision (a CMS envelope around XML)."""
+    """Summarise an embedded.mobileprovision: name, kind, team, device UDIDs, expiry.
+
+    The file is a CMS (PKCS#7) envelope; the signed payload is a plain XML
+    plist, so it is cut out by its markers instead of parsing the envelope.
+    The signature is not verified: iOS does that at install.
+    """
     start = data.find(b"<?xml")
     end = data.find(b"</plist>", start)
     if start < 0 or end < 0:
@@ -235,6 +259,8 @@ def profile_from_bytes(data, now=None):
     expires = p.get("ExpirationDate")
     devices = p.get("ProvisionedDevices")
     ent = p.get("Entitlements", {})
+    # Profile kind, from Apple's fields: enterprise allows all devices, App Store lists none,
+    # development allows debugging (get-task-allow), ad-hoc is the rest.
     if p.get("ProvisionsAllDevices"):
         kind = "enterprise"
     elif devices is None:
@@ -256,10 +282,11 @@ def profile_from_bytes(data, now=None):
 
 
 def _ios_report(kind, path, info, profile):
+    """The report shared by .ipa and .app, from Info.plist and the profile summary."""
     platforms = info.get("CFBundleSupportedPlatforms") or [info.get("DTPlatformName", "")]
     simulator = any("simulator" in str(p).lower() for p in platforms)
     families = {1: "iphone", 2: "ipad"}
-    family_ids = info.get("UIDeviceFamily", [1])
+    family_ids = info.get("UIDeviceFamily", [1])   # absent means iPhone only
     if not isinstance(family_ids, list):
         family_ids = [family_ids]
     return {
@@ -278,6 +305,7 @@ def _ios_report(kind, path, info, profile):
 
 
 def _ipa(path, now):
+    """Report for an .ipa: the first Payload/*.app's Info.plist and embedded profile."""
     with zipfile.ZipFile(path) as z:
         apps = sorted({n.split("/")[1] for n in z.namelist()
                        if n.startswith("Payload/") and n.split("/")[1].endswith(".app")})
@@ -291,11 +319,12 @@ def _ipa(path, now):
         try:
             prov = z.read(base + "/embedded.mobileprovision")
         except KeyError:
-            prov = None
+            prov = None                 # simulator and unsigned builds carry no profile
     return _ios_report("ipa", path, info, profile_from_bytes(prov, now) if prov else None)
 
 
 def _app_dir(path, now):
+    """Report for an .app directory (what Xcode builds), read from disk."""
     try:
         with open(os.path.join(path, "Info.plist"), "rb") as f:
             info = plistlib.load(f)

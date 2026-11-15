@@ -16,8 +16,10 @@ def parse_devicectl(doc):
         hw = d.get("hardwareProperties", {})
         props = d.get("deviceProperties", {})
         conn = d.get("connectionProperties", {})
+        # devicectl also lists Macs, Watches, TVs and Vision Pro: keep only real iPhones and iPads.
         if hw.get("platform") != "iOS" or hw.get("reality", "physical") != "physical":
             continue
+        # First problem wins: pairing, then reachability, then Developer Mode.
         if conn.get("pairingState") != "paired":
             state = "unpaired"
         elif conn.get("tunnelState") == "unavailable":
@@ -29,7 +31,7 @@ def parse_devicectl(doc):
         transport = {"wired": "usb", "localNetwork": "wifi"}.get(conn.get("transportType", ""), "")
         cpu = [c.get("name") for c in hw.get("supportedCPUTypes", []) if c.get("name")]
         devices.append(Device(
-            id=hw.get("udid") or d.get("identifier", ""),
+            id=hw.get("udid") or d.get("identifier", ""),   # UDID: what profiles list and xcodebuild accepts
             platform="ios",
             kind="physical",
             state=state,
@@ -53,7 +55,7 @@ def parse_simctl(doc, include_shutdown=False):
         version = tail[4:].replace("-", ".")
         for s in sims:
             if not s.get("isAvailable", True):
-                continue
+                continue                         # runtime missing or deleted: cannot boot
             booted = s.get("state") == "Booted"
             if not booted and not include_shutdown:
                 continue
@@ -72,6 +74,7 @@ def parse_simctl(doc, include_shutdown=False):
 
 
 def has_devicectl(xcrun):
+    """True when this Xcode has devicectl (Xcode 15+), needed for physical devices."""
     try:
         return run([xcrun, "--find", "devicectl"]).rc == 0
     except ToolError:
@@ -79,6 +82,10 @@ def has_devicectl(xcrun):
 
 
 def list_physical(xcrun):
+    """Paired and visible iPhones and iPads. Raises ToolError if devicectl fails.
+
+    devicectl writes JSON only to a file, so a private temp file is used and deleted.
+    """
     fd, path = tempfile.mkstemp(prefix="devdrop-", suffix=".json")
     os.close(fd)
     try:
@@ -96,6 +103,7 @@ def list_physical(xcrun):
 
 
 def list_simulators(xcrun, include_shutdown=False):
+    """Booted iOS simulators (and shut-down ones if asked). Raises ToolError if simctl fails."""
     res = run([xcrun, "simctl", "list", "-j", "devices", "available"])
     if res.rc != 0:
         raise ToolError(f"simctl list: {res.err.strip() or 'exit ' + str(res.rc)}")

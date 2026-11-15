@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from devdrop import bundle, preflight
 from devdrop.tools import ToolError, run
 
-INSTALL_TIMEOUT = 600
+INSTALL_TIMEOUT = 600  # seconds for one install; large apps over Wi-Fi take minutes
 
 # adb failure codes and what to do about them.
 ANDROID_FAILURES = {
@@ -28,6 +28,7 @@ ANDROID_FAILURES = {
     "INSTALL_PARSE_FAILED_NO_CERTIFICATES": "APK is not signed",
     "INSTALL_FAILED_ALREADY_EXISTS": "app already installed; use --clean",
 }
+# "Failure [INSTALL_FAILED_X: detail]" from adb install, or a bare INSTALL_* code from bundletool.
 _FAILURE = re.compile(r"Failure \[([A-Z_]+)(?::[^\]]*)?\]|(INSTALL_[A-Z_]+)")
 # package/activity as printed by `cmd package resolve-activity --brief`.
 _COMPONENT = re.compile(r"^[A-Za-z][\w.]*/[\w.$]+$")
@@ -41,6 +42,7 @@ class LaunchLog:
 
 
 def _log_name(dev):
+    """Log file name for a device: its id with path-unsafe characters replaced."""
     return re.sub(r"[^\w.-]", "_", dev.id) + ".log"
 
 
@@ -54,9 +56,10 @@ def _android_crash(text, package):
     for i, line in enumerate(lines):
         if "FATAL EXCEPTION" not in line:
             continue
+        # Strip logcat prefixes; a stack trace fits well within 120 lines.
         block = [ln.split("AndroidRuntime: ", 1)[-1].strip() for ln in lines[i + 1:i + 120]]
         if not any(b.startswith(f"Process: {package},") for b in block[:3]):
-            continue
+            continue                    # another app crashed: not ours
         causes = [b[len("Caused by: "):] for b in block if b.startswith("Caused by: ")]
         if causes:
             return True, causes[-1][:300]
@@ -67,6 +70,7 @@ def _android_crash(text, package):
 
 
 def _ios_crash_line(text):
+    """First Swift fatal error or uncaught Objective-C exception in a log, or ""."""
     for line in text.splitlines():
         for marker in ("Fatal error:", "Terminating app due to uncaught exception"):
             if marker in line:
@@ -75,6 +79,8 @@ def _ios_crash_line(text):
 
 
 class StepError(Exception):
+    """One device failed at a named stage (install, launch, running, ...) for a plain reason."""
+
     def __init__(self, stage, reason):
         super().__init__(reason)
         self.stage = stage
@@ -82,6 +88,10 @@ class StepError(Exception):
 
 
 def record(dev, result, stage, reason, started, warnings=(), extra=None):
+    """One device's result as a dict: device facts, ok/skipped/failed, stage, reason, seconds.
+
+    Every report (text, --json, --junit) is built from these.
+    """
     return (extra or {}) | {"id": dev.id, "name": dev.name, "platform": dev.platform, "kind": dev.kind,
             "manufacturer": dev.manufacturer, "model": dev.model, "os_version": dev.os_version,
             "api": dev.api, "page_size": dev.page_size, "result": result, "stage": stage,
@@ -89,6 +99,7 @@ def record(dev, result, stage, reason, started, warnings=(), extra=None):
 
 
 def android_failure(text):
+    """adb install output -> "CODE: what to do" when the code is known, else the code or last line."""
     m = _FAILURE.search(text)
     if not m:
         tail = text.strip().splitlines()
@@ -98,22 +109,29 @@ def android_failure(text):
 
 
 class Android:
+    """Install, launch, uninstall and launch-watching for Android devices through adb."""
+
     def __init__(self, adb, bundle=None):
         self.adb = adb
         self.bundle = bundle            # (bundletool argv, Signing, work dir) for .aab installs
 
     def _adb(self, dev, *args, timeout=None):
+        """Run adb against one device (-s serial)."""
         return run([self.adb, "-s", dev.id, *args], timeout=timeout)
 
     def install(self, dev, report):
+        """Install an APK (or an .aab through bundletool); raise StepError with adb's reason."""
         if report["type"] == "aab":
             return self._install_bundle(dev, report)
+        # -r: replace an installed copy, keeping data. -t: allow test-only (debug) APKs.
         r = self._adb(dev, "install", "-r", "-t", report["path"], timeout=INSTALL_TIMEOUT)
         out = r.out + r.err
+        # Old adb versions exit 0 on failure: require the "Success" line too.
         if r.rc != 0 or "Success" not in out:
             raise StepError("install", android_failure(out))
 
     def _install_bundle(self, dev, report):
+        """.aab: build this device's APK set, then install it. Stage says which half failed."""
         bundletool, sign, workdir = self.bundle
         apks = os.path.join(workdir, re.sub(r"[^\w.-]", "_", dev.id) + ".apks")
         r = bundle.build_apks(bundletool, self.adb, report["path"], dev.id, sign, apks)
@@ -126,12 +144,13 @@ class Android:
             raise StepError("install", reason or f"bundletool exit {r.rc}")
 
     def prepare_logs(self, dev):
+        """Clear the main and crash log buffers so the watch window shows only this launch."""
         self._adb(dev, "logcat", "-b", "main", "-b", "crash", "-c")
 
     def observe(self, dev, package, log):
         """After launch: is the app still running, and the device log for the window."""
         time.sleep(log.seconds)
-        pids = self._adb(dev, "shell", "pidof", package).out.split()
+        pids = self._adb(dev, "shell", "pidof", package).out.split()   # empty when not running
         text = self._adb(dev, "logcat", "-d", "-b", "main", "-b", "crash", "-v", "threadtime").out
         path = os.path.join(log.directory, _log_name(dev))
         with open(path, "w", encoding="utf-8") as f:
@@ -142,10 +161,12 @@ class Android:
         return running, path, reason
 
     def uninstall(self, dev, package, missing_ok=False):
+        """Remove the app and its data. missing_ok: an absent app is not an error (--clean)."""
         r = self._adb(dev, "uninstall", package)
         out = r.out + r.err
         if "Success" in out:
             return
+        # Android words "not installed" differently across versions.
         if missing_ok and ("DELETE_FAILED_INTERNAL_ERROR" in out or "Unknown package" in out):
             return
         reason = "not installed" if "DELETE_FAILED_INTERNAL_ERROR" in out or "Unknown package" in out \
@@ -153,6 +174,11 @@ class Android:
         raise StepError("uninstall", reason)
 
     def launch(self, dev, package, fallback=""):
+        """Start the app's launcher activity; raise StepError if Android refuses.
+
+        Order: ask the device (resolve-activity), else the launcher read from the
+        manifest (fallback), else monkey. The first two give a clear error from `am start`.
+        """
         r = self._adb(dev, "shell", "cmd", "package", "resolve-activity", "--brief",
                       "-c", "android.intent.category.LAUNCHER", package)
         # Old Android (API 23 and below) has no `cmd`; its shell still exits 0 and
@@ -169,11 +195,13 @@ class Android:
             raise StepError("launch", "no launcher activity (is the app installed?)")
         r = self._adb(dev, "shell", "am", "start", "-n", component)
         out = r.out + r.err
+        # am start exits 0 even when the activity does not exist; its "Error:" line says so.
         if r.rc != 0 or "Error" in out:
             line = next((ln for ln in out.splitlines() if "Error" in ln), out.strip())
             raise StepError("launch", line.strip() or f"am start exit {r.rc}")
 
 
+# (text found anywhere in devicectl/simctl output, what to tell the operator). First match wins.
 IOS_HINTS = (
     ("explicitly trusted by the user", "trust the developer on the device: Settings > General > "
                                        "VPN & Device Management"),
@@ -185,6 +213,10 @@ IOS_HINTS = (
 
 
 def ios_failure(text):
+    """devicectl/simctl failure -> its ERROR line, plus a fix when a known cause appears below it.
+
+    devicectl puts a generic line first and the real cause deeper in the text.
+    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     first = next((ln for ln in lines if ln.startswith("ERROR:")), lines[-1] if lines else "unknown error")
     first = first.removeprefix("ERROR:").strip()
@@ -203,6 +235,7 @@ def unpack_ipa(ipa, dest):
             if len(parts) < 2 or parts[0] != "Payload" or not parts[1].endswith(".app"):
                 continue
             app = app or parts[1]
+            # Only the first app; refuse ".." and absolute paths (zip-slip) so nothing lands outside dest.
             if parts[1] != app or ".." in parts or info.filename.startswith("/"):
                 continue
             target = os.path.join(dest, *parts[1:])
@@ -212,6 +245,7 @@ def unpack_ipa(ipa, dest):
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with z.open(info) as src, open(target, "wb") as out:
                 out.write(src.read())
+            # Keep the executable bit (zip stores Unix modes in the high 16 bits); never create symlinks.
             mode = (info.external_attr >> 16) & 0o777
             if stat.S_IFMT(info.external_attr >> 16) != stat.S_IFLNK and mode:
                 os.chmod(target, mode)
@@ -221,17 +255,22 @@ def unpack_ipa(ipa, dest):
 
 
 class Ios:
+    """Install, launch, uninstall and launch-watching for iPhones (devicectl) and simulators (simctl)."""
+
     def __init__(self, xcrun):
         self.xcrun = xcrun
 
     def _run(self, *args, timeout=120):
+        """Run an xcrun subcommand (devicectl or simctl)."""
         return run([self.xcrun, *args], timeout=timeout)
 
     def _check(self, stage, r):
+        """Raise StepError for a failed run, worded by ios_failure."""
         if r.rc != 0:
             raise StepError(stage, ios_failure(r.err or r.out))
 
     def install(self, dev, report):
+        """Install the .app (an .ipa was unpacked to app_path first)."""
         app = report.get("app_path") or report["path"]
         if dev.kind == "simulator":
             r = self._run("simctl", "install", dev.id, app, timeout=INSTALL_TIMEOUT)
@@ -241,6 +280,7 @@ class Ios:
         self._check("install", r)
 
     def uninstall(self, dev, bundle_id, missing_ok=False):
+        """Remove the app; an absent app raises "not installed" unless missing_ok."""
         if dev.kind == "simulator":
             installed = self._run("simctl", "get_app_container", dev.id, bundle_id).rc == 0
             if not installed:
@@ -263,9 +303,11 @@ class Ios:
         self._check("uninstall", r)
 
     def prepare_logs(self, dev):
+        """Nothing to clear on iOS."""
         pass                                    # iOS logs are read for a time window after launch
 
     def observe(self, dev, bundle_id, log):
+        """After launch: (running, log path, crash line). iPhone: running only, no log."""
         time.sleep(log.seconds)
         if dev.kind != "simulator":
             return self._device_running(dev, bundle_id), None, ""
@@ -311,6 +353,7 @@ class Ios:
         return any(p.get("executable", "").startswith(folder + "/") for p in procs.get("runningProcesses", []))
 
     def launch(self, dev, bundle_id, fallback=""):
+        """Start the app, restarting it if already running. fallback is unused on iOS."""
         if dev.kind == "simulator":
             r = self._run("simctl", "launch", "--terminate-running-process", dev.id, bundle_id)
         else:
@@ -327,6 +370,7 @@ def _launch_and_watch(backend, dev, app_id, log, fallback=""):
     if not log:
         return "", None
     running, path, crash = backend.observe(dev, app_id, log)
+    # running is None when it could not be told (iPhone query failed): not reported as a crash.
     extra = {"running": running, "log": path}
     if running is False:
         return f"app exited within {log.seconds:g}s" + (f": {crash}" if crash else ""), extra
@@ -334,6 +378,10 @@ def _launch_and_watch(backend, dev, app_id, log, fallback=""):
 
 
 def install_one(backend, dev, report, clean=False, launch=False, log=None):
+    """Full install on one device: preflight, optional clean, install, optional launch and watch.
+
+    Never raises: every outcome becomes a record (ok, skipped at preflight, failed at a stage).
+    """
     started = time.monotonic()
     reason = preflight.check(report, dev)
     if reason:
@@ -356,6 +404,7 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None):
 
 
 def by_id_one(action, backend, dev, app_id, log=None):
+    """launch or uninstall an installed app on one device; never raises, returns a record."""
     started = time.monotonic()
     if dev.state != "ready":
         return record(dev, "skipped", "preflight", f"device is {dev.state}", started)
@@ -378,7 +427,7 @@ def fan_out(devices, work, jobs=None, on_done=None):
     """Run work(device) on each device in parallel; records come back in device order."""
     if not devices:
         return []
-    jobs = max(1, jobs or min(8, len(devices)))
+    jobs = max(1, jobs or min(8, len(devices)))   # default: up to 8 devices at once
     results = {}
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(work, d): i for i, d in enumerate(devices)}
@@ -386,5 +435,5 @@ def fan_out(devices, work, jobs=None, on_done=None):
             rec = f.result()
             results[futures[f]] = rec
             if on_done:
-                on_done(rec)
+                on_done(rec)            # print each device as it finishes, not at the end
     return [results[i] for i in range(len(devices))]

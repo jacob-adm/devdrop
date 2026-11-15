@@ -8,12 +8,13 @@ map, and start/end element chunks whose attributes carry typed values
 
 import struct
 
+# Chunk types (ResChunk_header.type).
 RES_STRING_POOL = 0x0001
 RES_XML = 0x0003
 RES_XML_START_ELEMENT = 0x0102
 RES_XML_END_ELEMENT = 0x0103
 RES_XML_RESOURCE_MAP = 0x0180
-UTF8_FLAG = 1 << 8
+UTF8_FLAG = 1 << 8                  # string pool flag: strings are UTF-8, else UTF-16LE
 
 # Res_value data types
 TYPE_REFERENCE = 0x01
@@ -36,34 +37,45 @@ ATTR_IDS = {
 
 
 class AxmlError(ValueError):
-    pass
+    """The bytes are not valid Android binary XML; the message says where it broke."""
 
 
 class Element:
+    """One decoded XML element: tag, attributes by local name, child elements."""
+
     def __init__(self, tag, attrs):
         self.tag = tag
         self.attrs = attrs        # local name -> decoded value
         self.children = []
 
     def find_all(self, tag):
+        """Yield direct children with this tag, in document order."""
         for c in self.children:
             if c.tag == tag:
                 yield c
 
 
 def _u16(buf, off):
+    """Little-endian uint16 at off."""
     return struct.unpack_from("<H", buf, off)[0]
 
 
 def _u32(buf, off):
+    """Little-endian uint32 at off."""
     return struct.unpack_from("<I", buf, off)[0]
 
 
 def _string_pool(buf, start):
+    """Decode a ResStringPool chunk into a list of strings, bounds-checked.
+
+    Each string is prefixed by its length: 1-2 bytes in UTF-8 pools (after a
+    UTF-16 length that is skipped), 2-4 bytes in UTF-16 pools.
+    """
     header_size = _u16(buf, start + 2)
     size = _u32(buf, start + 4)
     count, _styles, flags, strings_start = struct.unpack_from("<IIII", buf, start + 8)
     end = start + size
+    # Reject a pool whose offset table would read past the chunk: crafted files try this.
     if end > len(buf) or start + header_size + 4 * count > end:
         raise AxmlError("string pool runs past the end of the file")
     utf8 = bool(flags & UTF8_FLAG)
@@ -74,7 +86,7 @@ def _string_pool(buf, start):
         if utf8:
             off += 2 if buf[off] & 0x80 else 1           # UTF-16 length, unused
             n = buf[off]
-            if n & 0x80:
+            if n & 0x80:                                  # high bit: two-byte length
                 n = ((n & 0x7F) << 8) | buf[off + 1]
                 off += 2
             else:
@@ -83,7 +95,7 @@ def _string_pool(buf, start):
             text = raw.decode("utf-8", errors="replace")
         else:
             n = _u16(buf, off)
-            if n & 0x8000:
+            if n & 0x8000:                                # high bit: four-byte length
                 n = ((n & 0x7FFF) << 16) | _u16(buf, off + 2)
                 off += 4
             else:
@@ -97,10 +109,14 @@ def _string_pool(buf, start):
 
 
 def _value(strings, raw, dtype, data):
+    """Decode one attribute's Res_value to str, int, bool or "@0x<resource id>".
+
+    Unknown types fall back to the raw string, then the raw number.
+    """
     if dtype == TYPE_STRING:
         return strings[data] if data < len(strings) else ""
     if dtype in (TYPE_INT_DEC, TYPE_INT_HEX):
-        return struct.unpack("<i", struct.pack("<I", data))[0]
+        return struct.unpack("<i", struct.pack("<I", data))[0]   # stored unsigned; values are signed
     if dtype == TYPE_BOOLEAN:
         return data != 0
     if dtype == TYPE_REFERENCE:
@@ -116,12 +132,13 @@ def parse(buf):
         raise AxmlError("not an Android binary XML file")
     strings, resource_ids = [], []
     root, stack = None, []
-    off = _u16(buf, 2)
+    off = _u16(buf, 2)                  # first chunk starts after the file header
     try:
         while off + 8 <= len(buf):
             ctype, header_size, size = struct.unpack_from("<HHI", buf, off)
             if size < 8 or off + size > len(buf):
                 raise AxmlError(f"chunk at byte {off} runs past the end of the file")
+            # Walk chunks in order; unknown types are skipped by their size.
             if ctype == RES_STRING_POOL:
                 strings = _string_pool(buf, off)
             elif ctype == RES_XML_RESOURCE_MAP:
@@ -134,11 +151,13 @@ def parse(buf):
                 for i in range(attr_count):
                     a = ext + attr_start + i * attr_size
                     _ans, aname, raw, _vsize, _res0, dtype, data = struct.unpack_from("<IIIHBBI", buf, a)
+                    # Prefer the resource id: obfuscated builds strip or rename attribute names.
                     key = ATTR_IDS.get(resource_ids[aname]) if aname < len(resource_ids) else None
                     if key is None:
                         key = strings[aname] if aname < len(strings) else f"attr{aname}"
                     attrs[key] = _value(strings, raw, dtype, data)
                 el = Element(strings[name] if name < len(strings) else "", attrs)
+                # Open elements live on a stack; the first one becomes the root.
                 if stack:
                     stack[-1].children.append(el)
                 elif root is None:
@@ -148,7 +167,7 @@ def parse(buf):
                 if stack:
                     stack.pop()
             off += size
-    except (struct.error, IndexError) as e:
+    except (struct.error, IndexError) as e:   # any short read: report as malformed, never crash
         raise AxmlError(f"truncated or malformed binary XML ({e})")
     if root is None:
         raise AxmlError("binary XML has no elements")
