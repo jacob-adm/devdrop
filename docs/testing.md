@@ -48,6 +48,9 @@ per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
 
 ## Tested on
 
+- The unit suite, in CI on every pull request: Linux, macOS and Windows, with
+  Python 3.11 and 3.13. On Windows the stand-in tools are real `.exe` files,
+  as the Android SDK's are.
 - Android emulators (Google system images, arm64): API 23, 24, 29 (also
   with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
   API 35 and 37.
