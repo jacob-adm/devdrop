@@ -430,6 +430,37 @@ class IosToolEdges(unittest.TestCase):
         r = devdrop(self.fake, "install", ipa, "--to", IPHONE, "--clean", "--json")
         self.assertEqual(json.loads(r.stdout)["ok"], 1)                  # missing app tolerated by --clean
 
+    def _phone_apps(self, apps, uninstall_rc=0):
+        from tests.test_ios_install import xcrun_rules as ios_rules
+        query = {"match": ["devicectl", "device", "info", "apps"], "write_after": "--json-output",
+                 "file": json.dumps({"result": {"apps": apps}})}
+        if apps is None:
+            query = {"match": ["devicectl", "device", "info", "apps"], "rc": 1, "stderr": "ERROR: no tunnel\n"}
+        self.fake.add("xcrun", ios_rules(extra=[query, {"match": ["devicectl", "device", "uninstall"],
+                                                        "rc": uninstall_rc}]))
+
+    def test_physical_uninstall_of_missing_app_says_not_installed(self):
+        # devicectl exits 0 when asked to remove an app that is not on the phone.
+        from tests.test_ios_install import IPHONE
+        self._phone_apps([])
+        r = devdrop(self.fake, "uninstall", "com.example.app", "--to", IPHONE, "--json")
+        rec = json.loads(r.stdout)["results"][0]
+        self.assertEqual((r.returncode, rec["reason"]), (1, "not installed"))
+        self.assertNotIn("uninstall", [c[2] for c in self.fake.calls("xcrun") if c[:2] == ["devicectl", "device"]])
+
+    def test_physical_uninstall_of_installed_app(self):
+        from tests.test_ios_install import IPHONE
+        self._phone_apps([{"bundleIdentifier": "com.example.app"}])
+        r = devdrop(self.fake, "uninstall", "com.example.app", "--to", IPHONE, "--json")
+        self.assertEqual((r.returncode, json.loads(r.stdout)["ok"]), (0, 1))
+        self.assertIn("uninstall", [c[2] for c in self.fake.calls("xcrun") if c[:2] == ["devicectl", "device"]])
+
+    def test_physical_uninstall_when_the_app_query_fails_still_uninstalls(self):
+        from tests.test_ios_install import IPHONE
+        self._phone_apps(None)
+        r = devdrop(self.fake, "uninstall", "com.example.app", "--to", IPHONE, "--json")
+        self.assertEqual((r.returncode, json.loads(r.stdout)["ok"]), (0, 1))
+
     def test_simulator_uninstall_of_installed_app(self):
         from tests.test_ios_install import xcrun_rules as ios_rules
         self.fake.add("xcrun", ios_rules(extra=[{"match": ["simctl", "get_app_container"], "stdout": "/x\n"}]))

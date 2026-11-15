@@ -175,6 +175,8 @@ class Android:
 
 
 IOS_HINTS = (
+    ("explicitly trusted by the user", "trust the developer on the device: Settings > General > "
+                                       "VPN & Device Management"),
     ("Developer Mode", "turn on Developer Mode on the device"),
     ("locked", "unlock the device and retry"),
     ("provisioning profile", "the provisioning profile does not allow this device or app"),
@@ -247,6 +249,14 @@ class Ios:
                 raise StepError("uninstall", "not installed")
             r = self._run("simctl", "uninstall", dev.id, bundle_id)
         else:
+            # devicectl reports success for an app that is not there, so ask the phone first.
+            # When that query fails, the uninstall runs anyway and its own result counts.
+            listed = self._json("device", "info", "apps", "--device", dev.id, "--bundle-id", bundle_id,
+                                "--include-all-apps")
+            if listed is not None and not listed.get("apps"):
+                if missing_ok:
+                    return
+                raise StepError("uninstall", "not installed")
             r = self._run("devicectl", "device", "uninstall", "app", "--device", dev.id, bundle_id)
             if r.rc != 0 and missing_ok:
                 return

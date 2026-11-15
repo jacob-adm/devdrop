@@ -201,8 +201,15 @@ any CI dashboard shows which devices failed and why.
 
 ```
 python3 -m unittest discover -s tests          # unit, CLI and fuzz tests (no devices needed)
-DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v   # end to end on real devices
+DEVDROP_E2E=1 python3 -m unittest tests.e2e.test_e2e -v   # end to end on emulators and simulators
+DEVDROP_E2E=1 DEVDROP_E2E_IPA=app.ipa DEVDROP_E2E_ANCHOR=com.example.other \
+    python3 -m unittest tests.e2e.test_physical -v           # end to end on an attached iPhone
 ```
+
+The iPhone test needs a build signed with a development profile that
+lists the phone, and a second app from the same team left installed:
+iOS withdraws the trust in a team when its last app is removed. The
+test's docstring explains both.
 
 `ci/linux.sh` runs the unit suite on Linux in Docker (Python 3.11 and
 3.13 by default, `DEVDROP_LINUX_PYTHONS` to change), using only the files
@@ -242,8 +249,10 @@ per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
   with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
   API 35 and 37.
 - iOS simulators: iOS 18.5 and 26.3.
-- A physical iPhone on iOS 26: device listing, state checks and launch.
-  Installing a signed build on a physical iPhone has not been tested yet.
+- A physical iPhone on iOS 26: a development-signed build inspected
+  (its real provisioning profile), installed, launched with `--logs`
+  and `--junit`, and uninstalled, each checked on the phone with
+  devicectl (`tests/e2e/test_physical.py`).
 - Not yet tested on physical Android phones, including vendor builds such
   as Samsung One UI or Xiaomi HyperOS, whose install prompts and
   restrictions differ from Google's images.
