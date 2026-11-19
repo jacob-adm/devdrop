@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -466,6 +467,7 @@ class E_WirelessAndWatch(unittest.TestCase):
         watcher = subprocess.Popen([S["devdrop"], "install", apk("app-v1"), "--to", name, "--watch",
                                     "--watch-timeout", "420", "--json"],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        installed, serial = True, ""
         try:
             time.sleep(5)
             rc, out, _ = devdrop("boot", "--to", name, "--boot-timeout", "400", "--json")
@@ -473,11 +475,20 @@ class E_WirelessAndWatch(unittest.TestCase):
             serial = out["results"][0]["reason"].split()[-1]   # "running as emulator-NNNN"
             deadline = time.monotonic() + 120
             while PACKAGE not in adb(serial, "shell", "pm", "list", "packages", PACKAGE):
-                self.assertLess(time.monotonic(), deadline, "watch did not install on the booted device")
+                if time.monotonic() >= deadline:
+                    installed = False
+                    break
                 time.sleep(2)
         finally:
-            watcher.terminate()
-            watcher.communicate(timeout=60)      # drain and close its pipes
+            watcher.send_signal(signal.SIGINT)   # as Ctrl-C: the watcher prints its summary and exits
+            try:
+                said = watcher.communicate(timeout=60)
+            except subprocess.TimeoutExpired:
+                watcher.kill()
+                said = watcher.communicate()
+        # The watcher's own output is the only record of what it did with the device.
+        self.assertTrue(installed, f"watch did not install on {name} ({serial}) within 120 s of boot; "
+                                   f"watcher rc={watcher.returncode}\nstdout:\n{said[0]}\nstderr:\n{said[1]}")
         _, devs, _ = devdrop("devices", "--json")
         S["serials"][name] = next(d["id"] for d in devs["devices"] if d["name"] == name)
 
