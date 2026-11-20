@@ -511,9 +511,15 @@ def cmd_install(args):
             rec = deploy.install_one(backends[dev.platform], dev, report, args.clean, args.launch, log, shot,
                                      args.url or "", args.dry_run)
             return rec | {"artifact": report["path"]}
-        records = deploy.fan_out(chosen, work, args.jobs, show)
-        if args.watch:
-            records += _watch(args, cfg, platforms, backends, {r["id"] for r in records}, work, show)
+        try:
+            records = deploy.fan_out(chosen, work, args.jobs, show)
+        except deploy.Interrupted as stop:
+            if not args.watch:
+                raise                   # a plain install stopped with Ctrl-C exits 130, as before
+            records = stop.records      # a watch stopped during its first pass still reports it
+        else:
+            if args.watch:
+                records += _watch(args, cfg, platforms, backends, {r["id"] for r in records}, work, show)
     if args.watch and not records:
         print("devdrop: no device appeared", file=sys.stderr)
         return NO_DEVICES
@@ -540,8 +546,10 @@ def _watch(args, cfg, platforms, backends, handled, work, show):
             if new:
                 handled.update(d.id for d in new)
                 records += deploy.fan_out(new, work, args.jobs, show)
-    except KeyboardInterrupt:
-        pass                            # Ctrl-C ends the watch normally: summary and exit code follow
+    except KeyboardInterrupt as stop:
+        # Ctrl-C ends the watch normally: summary and exit code follow. Installs that were
+        # under way have finished and are part of it.
+        records += getattr(stop, "records", [])
     return records
 
 

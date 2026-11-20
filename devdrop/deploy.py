@@ -12,7 +12,7 @@ import time
 import zipfile
 from urllib.parse import unquote
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 
 from devdrop import bundle, preflight
 from devdrop.tools import ToolError, run, start
@@ -671,17 +671,42 @@ def by_id_one(action, backend, dev, app_id, log=None, shot=None, url=""):
     return record(dev, "ok", action, "", started, notes, extra)
 
 
+class Interrupted(KeyboardInterrupt):
+    """Ctrl-C arrived during a fan-out; records holds what the devices under way reported."""
+
+    def __init__(self, records):
+        super().__init__()
+        self.records = records
+
+
 def fan_out(devices, work, jobs=None, on_done=None):
-    """Run work(device) on each device in parallel; records come back in device order."""
+    """Run work(device) on each device in parallel; records come back in device order.
+
+    On Ctrl-C no further device is started, the ones under way finish, and
+    Interrupted is raised with their records, so a run that is stopped still
+    says what reached the devices. A second Ctrl-C ends the wait.
+    """
     if not devices:
         return []
     jobs = max(1, jobs or min(8, len(devices)))   # default: up to 8 devices at once
     results = {}
+
+    def collect(done):
+        for f in done:
+            if futures[f] not in results and not f.cancelled():
+                rec = f.result()
+                results[futures[f]] = rec
+                if on_done:
+                    on_done(rec)        # print each device as it finishes, not at the end
+
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(work, d): i for i, d in enumerate(devices)}
-        for f in as_completed(futures):
-            rec = f.result()
-            results[futures[f]] = rec
-            if on_done:
-                on_done(rec)            # print each device as it finishes, not at the end
+        try:
+            for f in as_completed(futures):
+                collect([f])
+        except KeyboardInterrupt:
+            for f in futures:
+                f.cancel()              # only takes effect on devices not started yet
+            collect(wait(futures).done)
+            raise Interrupted([results[i] for i in sorted(results)]) from None
     return [results[i] for i in range(len(devices))]
