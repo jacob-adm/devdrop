@@ -71,9 +71,9 @@ devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contain
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
-                [--screenshot DIR [--screenshot-seconds N]]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop launch APP_ID [--to SEL] [--logs DIR [--log-seconds N]] [--jobs N] [--json]
-                [--screenshot DIR [--screenshot-seconds N]]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 devdrop pair HOST:PORT CODE        pair with an Android device over Wi-Fi
 devdrop connect [HOST:PORT ...]    connect over Wi-Fi (default: every paired device found by mDNS)

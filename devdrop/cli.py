@@ -435,6 +435,9 @@ def cmd_install(args):
     if args.screenshot and not args.launch:
         print("devdrop: --screenshot needs --launch", file=sys.stderr)
         return USAGE
+    if args.url and not args.launch:
+        print("devdrop: --url needs --launch", file=sys.stderr)
+        return USAGE
     log = _launch_log(args)
     shot = _launch_shot(args)
     # Only the build's platform is queried: an APK never waits on Xcode, an IPA never on adb.
@@ -460,7 +463,7 @@ def cmd_install(args):
                 return USAGE
         def work(dev):
             """Install on one device with this run's options."""
-            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot)
+            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot, args.url or "")
         records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
         if args.watch:
             records += _watch(args, cfg, report["platform"], backend, {r["id"] for r in records}, work)
@@ -545,7 +548,8 @@ def cmd_by_id(args):
     log = _launch_log(args) if args.command == "launch" else None
     shot = _launch_shot(args) if args.command == "launch" else None
     records = deploy.fan_out(
-        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log, shot),
+        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log, shot,
+                                           getattr(args, "url", None) or ""),
         args.jobs, None if args.json else _print_record)
     return _summary(records, args)
 
@@ -567,7 +571,9 @@ def _launch_shot(args):
 
 
 def _log_args(p):
-    """Add --logs, --log-seconds, --screenshot and --screenshot-seconds to a subcommand."""
+    """Add --url, --logs, --log-seconds, --screenshot and --screenshot-seconds to a subcommand."""
+    p.add_argument("--url", metavar="URL",
+                   help="open this link in the app instead of its start screen (a deep link)")
     p.add_argument("--screenshot", metavar="DIR",
                    help="after launching, save each device's screen to DIR/<device>.png")
     p.add_argument("--screenshot-seconds", type=_positive, default=3, metavar="N",
