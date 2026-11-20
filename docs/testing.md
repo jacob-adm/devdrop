@@ -63,12 +63,12 @@ itself with `adb`, `simctl` or `devicectl`.
 | A development-signed build inspected (its real provisioning profile), installed, launched with `--logs` and `--junit`, uninstalled | A physical iPhone, iOS 26 | `tests/e2e/test_physical.py`, each step checked on the phone with `devicectl` |
 | `launch --url`, and the `--screenshot` warning without pymobiledevice3 | A physical iPhone, iOS 26 | By hand: the launch is accepted and the app runs |
 | `launch --logs --screenshot` with pymobiledevice3 11.61 | A physical iPhone on USB, iOS 26 | By hand: the saved log holds only the app's lines and the PNG shows the app's screen |
+| Crash detection from the device log, with pymobiledevice3 11.61 | A physical iPhone on USB, iOS 26 | By hand: a development-signed app that calls `fatalError` at start is reported `failed` with the fatal error's text; the same app without the call is `ok` |
 
 Not tested:
 
-- Crash detection from a physical iPhone's log (no crashing test app is
-  signed for a device): unit suite only. The same goes for
-  pymobiledevice3 with an iPhone attached over the network.
+- pymobiledevice3 with an iPhone attached over the network: unit suite
+  only.
 - The low-storage check on a device that is actually full: it is covered
   by the unit suite only.
 - Reading the installed signing certificate on Android 9 to 14. The

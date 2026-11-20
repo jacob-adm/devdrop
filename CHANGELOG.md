@@ -5,6 +5,10 @@
 - `install --watch`: an install under way when Ctrl-C arrives now
   finishes and is in the summary. It used to complete on the device but
   be missing from the results.
+- `--logs` on a physical iPhone with pymobiledevice3: an app that
+  crashed is reported as failed when its log holds the crash line. iOS
+  can list a process for the app again right after a crash, which made
+  the crash read as "running".
 
 ## 0.3.0 - 2026-11-20
 

@@ -517,7 +517,10 @@ class Ios:
             path = os.path.join(log.directory, _log_name(dev))
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
-            return running, path, _ios_crash_line(text)
+            crash = _ios_crash_line(text)
+            # After a crash iOS can have a process for the app again within the watch, so the
+            # process list alone says "running": a crash line in the app's log decides.
+            return (False if crash else running), path, crash
         listed = self._run("simctl", "spawn", dev.id, "launchctl", "list").out
         running = f"UIKitApplication:{bundle_id}[" in listed
         info = self._run("simctl", "appinfo", dev.id, bundle_id).out
