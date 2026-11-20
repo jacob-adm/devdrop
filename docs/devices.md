@@ -48,7 +48,9 @@ over Wi-Fi) gets the build once, and its result prints as it finishes.
 An Android device that adb already lists but that is still starting is
 left until it reports `sys.boot_completed`.
 Ctrl-C, or `--watch-timeout SECONDS`, ends the run with the usual
-summary and exit code.
+summary and exit code. Installs under way when Ctrl-C arrives are
+allowed to finish and are part of the summary; no further device is
+started. A second Ctrl-C stops at once.
 
 ## Emulators and simulators
 

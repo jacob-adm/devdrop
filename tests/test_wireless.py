@@ -117,6 +117,7 @@ class Watch(unittest.TestCase):
         rules.insert(0, {"match": ["-s", "BBB222", "getprop", "sys.boot_completed"],
                          "unless_file": self.booted, "stdout": "\n"})
         rules.insert(1, {"match": ["getprop", "sys.boot_completed"], "stdout": "1\n"})
+        self.rules = rules
         self.fake.add("adb", rules)
 
     def watch(self, *args, plug_after=None):
@@ -179,6 +180,56 @@ class Watch(unittest.TestCase):
                          ["AAA111", "BBB222"])              # once each
         if os.name != "nt":
             self.assertEqual([r["id"] for r in json.loads(out)["results"]], ["AAA111", "BBB222"], err)
+
+    @unittest.skipIf(os.name == "nt", "no Ctrl-C to send to a child process on Windows")
+    def test_ctrl_c_during_an_install_still_reports_it(self):
+        # The install on the late device takes 3 s; Ctrl-C arrives while it is under way.
+        slow = {"match": ["-s", "BBB222", "install"], "sleep": 3, "stdout": "Performing Streamed Install\nSuccess\n"}
+        self.fake.add("adb", [slow] + self.rules)
+        open(self.booted, "w").close()
+        env = self.fake.env()
+        env["PYTHONPATH"] = REPO
+        p = subprocess.Popen([sys.executable, "-m", "devdrop", "install", self.apk, "--watch", "--json",
+                              "--watch-timeout", "60"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=self.fake.root)
+        try:
+            time.sleep(1.5)
+            open(self.later, "w").close()                   # BBB222 is plugged in
+            deadline = time.monotonic() + 50
+            while not any("install" in c and "BBB222" in c for c in self.calls()):
+                self.assertLess(time.monotonic(), deadline, "no install on BBB222")
+                time.sleep(0.1)
+        finally:
+            p.send_signal(signal.SIGINT)
+            out, err = p.communicate(timeout=60)
+        recs = {r["id"]: r["result"] for r in json.loads(out)["results"]}
+        self.assertEqual(recs, {"AAA111": "ok", "BBB222": "ok"}, err)
+        self.assertEqual(p.returncode, 0, err)
+
+    @unittest.skipIf(os.name == "nt", "no Ctrl-C to send to a child process on Windows")
+    def test_ctrl_c_during_the_first_pass_reports_it_too(self):
+        slow = {"match": ["-s", "AAA111", "install"], "sleep": 3, "stdout": "Performing Streamed Install\nSuccess\n"}
+        self.fake.add("adb", [slow] + self.rules)
+        env = self.fake.env()
+        env["PYTHONPATH"] = REPO
+        p = subprocess.Popen([sys.executable, "-m", "devdrop", "install", self.apk, "--watch", "--json"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=self.fake.root)
+        try:
+            deadline = time.monotonic() + 50
+            while not any("install" in c for c in self.calls()):
+                self.assertLess(time.monotonic(), deadline, "no install on AAA111")
+                time.sleep(0.1)
+        finally:
+            p.send_signal(signal.SIGINT)
+            out, err = p.communicate(timeout=60)
+        self.assertEqual([(r["id"], r["result"]) for r in json.loads(out)["results"]], [("AAA111", "ok")], err)
+        self.assertEqual(p.returncode, 0, err)
+
+    def calls(self):
+        try:
+            return self.fake.calls("adb")
+        except ValueError:                                  # a call record still being written
+            return []
 
     def test_watch_with_no_device_ever_exits_3(self):
         rc, out, err = self.watch("--to", "nothing-matches", "--watch-timeout", "3")

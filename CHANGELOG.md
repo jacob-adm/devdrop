@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `install --watch`: an install under way when Ctrl-C arrives now
+  finishes and is in the summary. It used to complete on the device but
+  be missing from the results.
+
 ## 0.3.0 - 2026-11-20
 
 - `install --dry-run`: checks the build against every selected device
