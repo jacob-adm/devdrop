@@ -100,6 +100,8 @@ devdrop boot --to my_avd                 # start a stopped emulator by name
 - [Devices](https://github.com/jacob-adm/devdrop/blob/main/docs/devices.md): choosing devices with `--to`, naming them,
   Wi-Fi, emulators and simulators, and physical iPhones.
 - [Reports for CI](https://github.com/jacob-adm/devdrop/blob/main/docs/ci.md): JSON and JUnit output.
+- [JSON output](https://github.com/jacob-adm/devdrop/blob/main/docs/json.md): every `--json` field, what stays
+  stable, and use from a script or a coding agent.
 - [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md): the unit and end-to-end suites, and the
   devices devdrop has been tested on.
 - [Security](https://github.com/jacob-adm/devdrop/blob/main/SECURITY.md): what devdrop runs, what it guards against, and how to

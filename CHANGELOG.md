@@ -16,6 +16,9 @@
   `devdrop install app.apk app.ipa`. Each device gets its platform's
   build and one report covers both. Every `--json` install record now
   has `artifact`, the path of the build it was for.
+- New page, `docs/json.md`: every `--json` field of every command, what
+  stays stable between releases, and a short sequence for scripts and
+  coding agents. A test keeps the page and the output in step.
 
 ## 0.2.0 - 2026-11-20
 
