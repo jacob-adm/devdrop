@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `install --watch` waits until a newly seen Android device has finished
+  booting. adb lists a device as ready a few seconds before Android can
+  take an install; the watch used to install in that gap, fail with
+  "Can't find service: package" and not try that device again.
+
 ## 0.1.0 - 2026-11-15
 
 First release. devdrop installs one mobile build on every attached

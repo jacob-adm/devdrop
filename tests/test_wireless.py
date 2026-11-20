@@ -3,6 +3,7 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -111,6 +112,11 @@ class Watch(unittest.TestCase):
         rules = adb_rules(devices=both)
         listing_one = "List of devices attached\nAAA111 device model:Pixel_8\n"
         rules.insert(0, {"match": ["devices", "-l"], "unless_file": self.later, "stdout": listing_one})
+        self.booted = os.path.join(self.fake.root, "booted")
+        # BBB222 answers as a device still starting until the "booted" marker exists.
+        rules.insert(0, {"match": ["-s", "BBB222", "getprop", "sys.boot_completed"],
+                         "unless_file": self.booted, "stdout": "\n"})
+        rules.insert(1, {"match": ["getprop", "sys.boot_completed"], "stdout": "1\n"})
         self.fake.add("adb", rules)
 
     def watch(self, *args, plug_after=None):
@@ -125,12 +131,54 @@ class Watch(unittest.TestCase):
         return p.returncode, out, err
 
     def test_device_plugged_in_later_is_installed_once(self):
+        open(self.booted, "w").close()
         rc, out, err = self.watch("--watch-timeout", "9", plug_after=1.5)
         self.assertEqual(rc, 0, err)
         ids = [r["id"] for r in json.loads(out)["results"]]
         self.assertEqual(ids, ["AAA111", "BBB222"])
         installs = [c[1] for c in self.fake.calls("adb") if "install" in c]
         self.assertEqual(sorted(installs), ["AAA111", "BBB222"])   # once each, across several polls
+
+    def test_device_still_booting_is_left_until_it_has_booted(self):
+        # adb lists a device as ready before Android can take an install.
+        def calls():
+            try:
+                return self.fake.calls("adb")
+            except ValueError:                              # a call record still being written
+                return []
+
+        def asked():
+            return [c for c in calls() if "sys.boot_completed" in c and "BBB222" in c]
+
+        def installs():
+            return [c[1] for c in calls() if "install" in c]
+
+        env = self.fake.env()
+        env["PYTHONPATH"] = REPO
+        open(self.later, "w").close()                       # BBB222 is listed from the start
+        p = subprocess.Popen([sys.executable, "-m", "devdrop", "install", self.apk, "--watch", "--json",
+                              "--watch-timeout", "60"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=self.fake.root)
+        try:
+            deadline = time.monotonic() + 50
+            while len(asked()) < 2:                         # asked at the start and on a later scan
+                self.assertLess(time.monotonic(), deadline, "the watch never asked whether BBB222 had booted")
+                time.sleep(0.2)
+            self.assertEqual(installs(), ["AAA111"])        # not installed on while it is starting
+            open(self.booted, "w").close()
+            while "BBB222" not in installs():
+                self.assertLess(time.monotonic(), deadline, "no install after BBB222 finished booting")
+                time.sleep(0.2)
+        finally:
+            if os.name == "nt":
+                p.terminate()                               # no Ctrl-C to send: no summary either
+            else:
+                p.send_signal(signal.SIGINT)
+            out, err = p.communicate(timeout=60)
+        self.assertEqual(sorted(c[1] for c in self.fake.calls("adb") if "install" in c),
+                         ["AAA111", "BBB222"])              # once each
+        if os.name != "nt":
+            self.assertEqual([r["id"] for r in json.loads(out)["results"]], ["AAA111", "BBB222"], err)
 
     def test_watch_with_no_device_ever_exits_3(self):
         rc, out, err = self.watch("--to", "nothing-matches", "--watch-timeout", "3")

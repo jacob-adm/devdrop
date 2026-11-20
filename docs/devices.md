@@ -45,6 +45,8 @@ both USB and Wi-Fi is listed and installed to once, over USB.
 `install --watch` keeps running after the first pass: every device that
 matches `--to` and becomes ready later (plugged in, booted, connected
 over Wi-Fi) gets the build once, and its result prints as it finishes.
+An Android device that adb already lists but that is still starting is
+left until it reports `sys.boot_completed`.
 Ctrl-C, or `--watch-timeout SECONDS`, ends the run with the usual
 summary and exit code.
 

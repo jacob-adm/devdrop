@@ -119,6 +119,18 @@ class Android:
         """Run adb against one device (-s serial)."""
         return run([self.adb, "-s", dev.id, *args], timeout=timeout)
 
+    def booted(self, dev):
+        """True once Android has finished starting.
+
+        adb lists a device as ready seconds before the package service
+        exists; an install in that gap fails with "Can't find service:
+        package". Android sets sys.boot_completed=1 when the gap is over.
+        """
+        try:
+            return self._adb(dev, "shell", "getprop", "sys.boot_completed").out.strip() == "1"
+        except ToolError:
+            return False
+
     def install(self, dev, report):
         """Install an APK (or an .aab through bundletool); raise StepError with adb's reason."""
         if report["type"] == "aab":
@@ -263,6 +275,10 @@ class Ios:
     def _run(self, *args, timeout=120):
         """Run an xcrun subcommand (devicectl or simctl)."""
         return run([self.xcrun, *args], timeout=timeout)
+
+    def booted(self, dev):
+        """A ready iPhone or simulator takes installs at once; only Android has a gap after "ready"."""
+        return True
 
     def _check(self, stage, r):
         """Raise StepError for a failed run, worded by ios_failure."""
