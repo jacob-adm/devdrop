@@ -52,7 +52,8 @@ Either platform works without the other.
    `--logs DIR` and devdrop watches each app for 5 seconds: an app that
    crashed is marked failed with the crash's cause, and each Android
    device's and simulator's log is saved. On an iPhone it checks that
-   the app is still running.
+   the app is still running. Add `--screenshot DIR` and it saves what
+   each Android device and simulator shows a few seconds after launch.
 6. **Read the result.** One line per device: `ok`, `skipped` or `failed`,
    with the reason. The exit code is 0 only when every device is `ok`.
    `--json` and `--junit FILE` give the same results to scripts and CI.
@@ -70,7 +71,9 @@ devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contain
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop launch APP_ID [--to SEL] [--logs DIR [--log-seconds N]] [--jobs N] [--json]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 devdrop pair HOST:PORT CODE        pair with an Android device over Wi-Fi
 devdrop connect [HOST:PORT ...]    connect over Wi-Fi (default: every paired device found by mDNS)

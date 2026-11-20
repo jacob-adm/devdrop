@@ -9,7 +9,9 @@ devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contain
 devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop launch APP_ID [--to SEL] [--logs DIR [--log-seconds N]] [--jobs N] [--json]
+                [--screenshot DIR [--screenshot-seconds N]] [--url URL]
 devdrop uninstall APP_ID [--to SEL] [--jobs N] [--json]
 devdrop pair HOST:PORT CODE        pair with an Android device over Wi-Fi
 devdrop connect [HOST:PORT ...]    connect over Wi-Fi (default: every paired device found by mDNS)
@@ -86,6 +88,36 @@ uncaught Objective-C exception), and each device's log for that window
 is saved as `DIR/<device>.log` (Android: logcat main and crash buffers;
 iOS simulator: the app's process in the unified log). On a physical
 iPhone devdrop checks that the app is running but saves no log.
+
+## Opening a link
+
+With `--url URL`, `install --launch` and `launch` open that link in the
+app instead of its start screen, to test a deep link on every device at
+once. It works with `--logs` and `--screenshot`.
+
+- Android: a `VIEW` intent for the URL, limited to the app's package. If
+  no activity of the app declares the link, the device is reported as
+  failed with `the app has no activity that opens this URL`.
+- iOS simulator: the app is started, then `simctl openurl` hands the URL
+  to iOS, which gives it to whichever installed app claims it. A link no
+  app claims fails the launch.
+- Physical iPhone or iPad: the URL is passed with the launch
+  (`devicectl ... --payload-url`).
+
+## Screenshots
+
+With `--screenshot DIR`, `install --launch` and `launch` save what each
+device shows `--screenshot-seconds` (default 3) after the app starts, as
+`DIR/<device>.png`. With `--logs` as well, the picture is taken after the
+log window if that is longer. Android devices and emulators use
+`screencap`; iOS simulators use `simctl io`. A physical iPhone or iPad
+has no screenshot command in `devicectl`, so its result carries the
+warning `no screenshot: not available on a physical iPhone or iPad`.
+
+A screenshot that cannot be taken never changes a result: the device
+stays `ok` and the reason is in its warnings. The picture is taken even
+when `--logs` finds that the app has exited, so it shows what a user
+would see. Each `--json` record names its file in `screenshot`.
 
 ## App Bundles (.aab)
 

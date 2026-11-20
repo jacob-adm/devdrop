@@ -297,6 +297,8 @@ def _print_record(rec):
         print(f"{'':8} warning: {safe(note)}", flush=True)
     if rec.get("log"):
         print(f"{'':8} log: {safe(rec['log'])}", flush=True)
+    if rec.get("screenshot"):
+        print(f"{'':8} screenshot: {safe(rec['screenshot'])}", flush=True)
 
 
 WATCH_POLL = 2.0  # seconds between device scans in install --watch
@@ -437,7 +439,14 @@ def cmd_install(args):
     if args.logs and not args.launch:
         print("devdrop: --logs needs --launch", file=sys.stderr)
         return USAGE
+    if args.screenshot and not args.launch:
+        print("devdrop: --screenshot needs --launch", file=sys.stderr)
+        return USAGE
+    if args.url and not args.launch:
+        print("devdrop: --url needs --launch", file=sys.stderr)
+        return USAGE
     log = _launch_log(args)
+    shot = _launch_shot(args)
     # Only the build's platform is queried: an APK never waits on Xcode, an IPA never on adb.
     found = _targets(args, cfg, (report["platform"],), allow_empty=args.watch)
     if isinstance(found, int):
@@ -461,7 +470,7 @@ def cmd_install(args):
                 return USAGE
         def work(dev):
             """Install on one device with this run's options."""
-            return deploy.install_one(backend, dev, report, args.clean, args.launch, log)
+            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot, args.url or "")
         records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
         if args.watch:
             records += _watch(args, cfg, report["platform"], backend, {r["id"] for r in records}, work)
@@ -544,8 +553,10 @@ def cmd_by_id(args):
     chosen, backends = found
     chosen = [d for d in chosen if d.platform in backends]   # drop devices whose tool is missing
     log = _launch_log(args) if args.command == "launch" else None
+    shot = _launch_shot(args) if args.command == "launch" else None
     records = deploy.fan_out(
-        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log),
+        chosen, lambda d: deploy.by_id_one(args.command, backends[d.platform], d, args.app_id, log, shot,
+                                           getattr(args, "url", None) or ""),
         args.jobs, None if args.json else _print_record)
     return _summary(records, args)
 
@@ -558,8 +569,22 @@ def _launch_log(args):
     return deploy.LaunchLog(args.logs, args.log_seconds)
 
 
+def _launch_shot(args):
+    """Screenshot settings for --screenshot (creating the directory), or None when not asked for."""
+    if not getattr(args, "screenshot", None):
+        return None
+    os.makedirs(args.screenshot, exist_ok=True)
+    return deploy.Screenshot(args.screenshot, args.screenshot_seconds)
+
+
 def _log_args(p):
-    """Add --logs and --log-seconds to a subcommand."""
+    """Add --url, --logs, --log-seconds, --screenshot and --screenshot-seconds to a subcommand."""
+    p.add_argument("--url", metavar="URL",
+                   help="open this link in the app instead of its start screen (a deep link)")
+    p.add_argument("--screenshot", metavar="DIR",
+                   help="after launching, save each device's screen to DIR/<device>.png")
+    p.add_argument("--screenshot-seconds", type=_positive, default=3, metavar="N",
+                   help="how long after launch the screenshot is taken (default 3)")
     p.add_argument("--logs", metavar="DIR",
                    help="after launching, watch the app and save each device's log to DIR/<device>.log")
     p.add_argument("--log-seconds", type=_positive, default=5, metavar="N",

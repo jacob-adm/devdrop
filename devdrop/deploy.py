@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import shlex
 import stat
 import tempfile
 import time
@@ -41,9 +42,38 @@ class LaunchLog:
     seconds: float
 
 
+@dataclass
+class Screenshot:
+    """--screenshot: where the images go and how long after launch each one is taken."""
+    directory: str
+    seconds: float
+
+
+PNG = b"\x89PNG\r\n\x1a\n"              # the first bytes of every PNG file
+DEVICE_SHOT = "/data/local/tmp/devdrop-screenshot.png"   # a path the adb shell user can write
+
+
+def _file_name(dev, ext):
+    """File name for a device: its id with path-unsafe characters replaced."""
+    return re.sub(r"[^\w.-]", "_", dev.id) + ext
+
+
 def _log_name(dev):
-    """Log file name for a device: its id with path-unsafe characters replaced."""
-    return re.sub(r"[^\w.-]", "_", dev.id) + ".log"
+    """Log file name for a device."""
+    return _file_name(dev, ".log")
+
+
+def _require_png(path):
+    """Raise StepError unless path is a PNG; old Android exits 0 even when screencap fails."""
+    try:
+        with open(path, "rb") as f:
+            ok = f.read(len(PNG)) == PNG
+    except OSError:
+        ok = False
+    if not ok:
+        if os.path.exists(path):
+            os.remove(path)
+        raise StepError("screenshot", "the device returned no image")
 
 
 def _android_crash(text, package):
@@ -155,6 +185,16 @@ class Android:
             reason = android_failure(out) if _FAILURE.search(out) else bundle.failure(out)
             raise StepError("install", reason or f"bundletool exit {r.rc}")
 
+    def screenshot(self, dev, path):
+        """Save what the screen shows as a PNG: capture on the device, copy it over, tidy up."""
+        self._adb(dev, "shell", "screencap", "-p", DEVICE_SHOT)
+        r = self._adb(dev, "pull", DEVICE_SHOT, path)
+        self._adb(dev, "shell", "rm", "-f", DEVICE_SHOT)
+        if r.rc != 0:
+            tail = (r.err or r.out).strip().splitlines()
+            raise StepError("screenshot", tail[-1] if tail else f"adb pull exit {r.rc}")
+        _require_png(path)
+
     def prepare_logs(self, dev):
         """Clear the main and crash log buffers so the watch window shows only this launch."""
         self._adb(dev, "logcat", "-b", "main", "-b", "crash", "-c")
@@ -185,12 +225,24 @@ class Android:
             else android_failure(out)
         raise StepError("uninstall", reason)
 
-    def launch(self, dev, package, fallback=""):
-        """Start the app's launcher activity; raise StepError if Android refuses.
+    def launch(self, dev, package, fallback="", url=""):
+        """Start the app's launcher activity, or open url in the app; raise StepError if Android refuses.
 
         Order: ask the device (resolve-activity), else the launcher read from the
         manifest (fallback), else monkey. The first two give a clear error from `am start`.
         """
+        if url:
+            # The package at the end limits the intent to this app. adb hands the line to the
+            # device's shell, so the URL is quoted: "&" and "?" must reach am untouched.
+            r = self._adb(dev, "shell", "am", "start", "-a", "android.intent.action.VIEW",
+                          "-d", shlex.quote(url), package)
+            out = r.out + r.err
+            if "unable to resolve Intent" in out:
+                raise StepError("launch", "the app has no activity that opens this URL (is it installed?)")
+            if r.rc != 0 or "Error" in out:
+                line = next((ln for ln in out.splitlines() if "Error" in ln), out.strip())
+                raise StepError("launch", line.strip() or f"am start exit {r.rc}")
+            return
         r = self._adb(dev, "shell", "cmd", "package", "resolve-activity", "--brief",
                       "-c", "android.intent.category.LAUNCHER", package)
         # Old Android (API 23 and below) has no `cmd`; its shell still exits 0 and
@@ -280,6 +332,13 @@ class Ios:
         """A ready iPhone or simulator takes installs at once; only Android has a gap after "ready"."""
         return True
 
+    def screenshot(self, dev, path):
+        """Save a simulator's screen as a PNG. devicectl has no screenshot command for real devices."""
+        if dev.kind != "simulator":
+            raise StepError("screenshot", "not available on a physical iPhone or iPad")
+        self._check("screenshot", self._run("simctl", "io", dev.id, "screenshot", path))
+        _require_png(path)
+
     def _check(self, stage, r):
         """Raise StepError for a failed run, worded by ios_failure."""
         if r.rc != 0:
@@ -368,32 +427,50 @@ class Ios:
             return None
         return any(p.get("executable", "").startswith(folder + "/") for p in procs.get("runningProcesses", []))
 
-    def launch(self, dev, bundle_id, fallback=""):
-        """Start the app, restarting it if already running. fallback is unused on iOS."""
+    def launch(self, dev, bundle_id, fallback="", url=""):
+        """Start the app, restarting it if already running; with url, open it. fallback is unused on iOS."""
         if dev.kind == "simulator":
             r = self._run("simctl", "launch", "--terminate-running-process", dev.id, bundle_id)
+            if r.rc == 0 and url:
+                # simctl has no "open in this app": iOS gives the URL to whichever app claims it.
+                r = self._run("simctl", "openurl", dev.id, url)
         else:
+            link = ["--payload-url", url] if url else []
             r = self._run("devicectl", "device", "process", "launch", "--device", dev.id,
-                          "--terminate-existing", bundle_id)
+                          "--terminate-existing", *link, bundle_id)
         self._check("launch", r)
 
 
-def _launch_and_watch(backend, dev, app_id, log, fallback=""):
-    """Launch; with --logs, watch the app for a while. Returns (failure reason or "", extra fields)."""
+def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None, url=""):
+    """Launch; with --logs, watch the app for a while; with --screenshot, save the screen.
+
+    Returns (failure reason or "", extra record fields or None, warnings).
+    """
     if log:
         backend.prepare_logs(dev)
-    backend.launch(dev, app_id, fallback)
-    if not log:
-        return "", None
-    running, path, crash = backend.observe(dev, app_id, log)
-    # running is None when it could not be told (iPhone query failed): not reported as a crash.
-    extra = {"running": running, "log": path}
-    if running is False:
-        return f"app exited within {log.seconds:g}s" + (f": {crash}" if crash else ""), extra
-    return "", extra
+    backend.launch(dev, app_id, fallback, url)
+    launched = time.monotonic()
+    died, extra, notes = "", None, []
+    if log:
+        running, path, crash = backend.observe(dev, app_id, log)
+        # running is None when it could not be told (iPhone query failed): not reported as a crash.
+        extra = {"running": running, "log": path}
+        if running is False:
+            died = f"app exited within {log.seconds:g}s" + (f": {crash}" if crash else "")
+    if shot:
+        # Taken even when the app died: the screen then shows what the user would see.
+        time.sleep(max(0.0, launched + shot.seconds - time.monotonic()))
+        path = os.path.join(shot.directory, _file_name(dev, ".png"))
+        try:
+            backend.screenshot(dev, path)
+            extra = (extra or {}) | {"screenshot": path}
+        except (StepError, ToolError) as e:
+            # A missing picture is not a failed install or launch: say so and keep the result.
+            notes.append(f"no screenshot: {e.reason if isinstance(e, StepError) else e}")
+    return died, extra, notes
 
 
-def install_one(backend, dev, report, clean=False, launch=False, log=None):
+def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=None, url=""):
     """Full install on one device: preflight, optional clean, install, optional launch and watch.
 
     Never raises: every outcome becomes a record (ok, skipped at preflight, failed at a stage).
@@ -402,14 +479,16 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None):
     reason = preflight.check(report, dev)
     if reason:
         return record(dev, "skipped", "preflight", reason, started)
-    notes = preflight.warnings(report, dev)
+    notes = list(preflight.warnings(report, dev))
     extra = None
     try:
         if clean:
             backend.uninstall(dev, report["id"], missing_ok=True)
         backend.install(dev, report)
         if launch:
-            died, extra = _launch_and_watch(backend, dev, report["id"], log, report.get("launcher", ""))
+            died, extra, more = _launch_and_watch(backend, dev, report["id"], log,
+                                                  report.get("launcher", ""), shot, url)
+            notes += more
             if died:
                 return record(dev, "failed", "running", died, started, notes, extra)
     except StepError as e:
@@ -419,24 +498,24 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None):
     return record(dev, "ok", "launch" if launch else "install", "", started, notes, extra)
 
 
-def by_id_one(action, backend, dev, app_id, log=None):
+def by_id_one(action, backend, dev, app_id, log=None, shot=None, url=""):
     """launch or uninstall an installed app on one device; never raises, returns a record."""
     started = time.monotonic()
     if dev.state != "ready":
         return record(dev, "skipped", "preflight", f"device is {dev.state}", started)
-    extra = None
+    extra, notes = None, []
     try:
         if action == "launch":
-            died, extra = _launch_and_watch(backend, dev, app_id, log)
+            died, extra, notes = _launch_and_watch(backend, dev, app_id, log, shot=shot, url=url)
             if died:
-                return record(dev, "failed", "running", died, started, extra=extra)
+                return record(dev, "failed", "running", died, started, notes, extra)
         else:
             backend.uninstall(dev, app_id)
     except StepError as e:
-        return record(dev, "failed", e.stage, e.reason, started, extra=extra)
+        return record(dev, "failed", e.stage, e.reason, started, notes, extra)
     except ToolError as e:
-        return record(dev, "failed", "tool", str(e), started, extra=extra)
-    return record(dev, "ok", action, "", started, extra=extra)
+        return record(dev, "failed", "tool", str(e), started, notes, extra)
+    return record(dev, "ok", action, "", started, notes, extra)
 
 
 def fan_out(devices, work, jobs=None, on_done=None):
