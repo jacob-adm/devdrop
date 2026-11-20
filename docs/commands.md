@@ -36,8 +36,11 @@ names the command that downloads one, `xcodebuild -downloadPlatform iOS`.
 `inspect` reads the build directly, without the platform tools:
 
 - APK: package, version name and code, minimum and target SDK, native
-  ABIs, whether it is debuggable, the launcher activity, and signing
-  schemes (v1, v2 or later).
+  ABIs, whether it is debuggable, the launcher activity, signing
+  schemes (v1, v2 or later), the file size, and the signing
+  certificates from the v2 or later signature: `certs` is each one's
+  SHA-256, as `apksigner verify --print-certs` shows it, and `cert_ids`
+  the short form Android prints in `dumpsys package`.
 - Android App Bundle (.aab): the same fields, read from the bundle's
   protobuf manifest. A bundle is signed later, when APKs are built from it.
 - APK native code and 16 KB memory pages: for each 64-bit library,
@@ -64,7 +67,23 @@ native code is not 16 KB ready on a 16 KB page-size device goes ahead
 with a warning naming each library: on the 16 KB emulator images tested
 (Android 15 and 17), such apps installed and ran, on Android 16+ in the
 page-size compatibility mode, which shows a warning on first launch.
-Install failures from the device are translated too (for example a signing-key clash says to use `--clean`).
+
+On Android, devdrop also asks each device what it already holds and
+skips it when Android is certain to refuse the build:
+
+- the installed copy has a newer `versionCode` (a downgrade);
+- the installed copy is signed with a different key. This is checked for
+  an APK on Android 15 and later, where the device reports the installed
+  certificate; an APK signed with a rotated key passes when either of
+  its certificates matches. Older Android versions and App Bundles are
+  not checked;
+- the device has less free storage than the APK's own size.
+
+The first two do not apply with `--clean`, which removes the installed
+copy first, and the storage check is left out then too. A device that
+does not answer the question is not skipped for it. Anything the device
+still refuses is translated (for example a signing-key clash on an older
+Android says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards.
 

@@ -56,6 +56,7 @@ itself with `adb`, `simctl` or `devicectl`.
 | --- | --- | --- |
 | Reading builds, device lists, selection, pre-install checks, reports, every command against stand-in tools | Linux, macOS and Windows; Python 3.11 and 3.13 | Unit suite, in CI on every pull request. On Windows the stand-in tools are real `.exe` files, as the Android SDK's are. |
 | Install, upgrade, downgrade, signing-key clash, launch, uninstall, launch logs and crash detection, App Bundles, boot and shutdown, `connect`, `--watch` | Android emulators (Google system images, arm64): API 23, 24, 29 (also with 1 GB of RAM), 34, 35, 36 and 37 | End-to-end suite |
+| Refusals predicted before sending: a downgrade, and a different signing key on API 35 and 37 | Android emulators API 23, 35 and 37 | End-to-end suite: after devdrop skips the device, the same APK is given to `adb install` directly and the device must refuse it |
 | 16 KB page-size readiness | 16 KB page-size images of API 35 and 37 | End-to-end suite |
 | Install, launch, uninstall, launch logs and crash detection, boot and shutdown | iOS simulators: iOS 18.5 and 26.3 | End-to-end suite |
 | `--screenshot` and `--url` | Android emulators API 23, 35 and 37; iOS simulator 26.3 | End-to-end suite: each record's PNG is read back; on Android the started activity shows the full link |
@@ -64,6 +65,10 @@ itself with `adb`, `simctl` or `devicectl`.
 
 Not tested:
 
+- The low-storage check on a device that is actually full: it is covered
+  by the unit suite only.
+- Reading the installed signing certificate on Android 9 to 14. The
+  signing-key check is therefore off below Android 15.
 - Physical Android phones, including vendor builds such as Samsung One UI
   or Xiaomi HyperOS, whose install prompts and restrictions differ from
   Google's images.

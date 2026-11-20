@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
 import json
 import os
+import tempfile
 import unittest
 
-from devdrop import config, deploy
+from devdrop import artifact, config, deploy, preflight
 from devdrop.device import Device
 from devdrop.select import select
 from tests import builders as b
@@ -82,6 +84,84 @@ class FailureText(unittest.TestCase):
         self.assertEqual(deploy.android_failure("adb: device offline\n"), "adb: device offline")
 
 
+# `dumpsys package` as printed by an Android 15 emulator, cut to the lines that matter.
+DUMPSYS_35 = """Packages:
+  Package [com.example.app] (bb0c7e9):
+    appId=10212
+    versionCode={code} minSdk=21 targetSdk=35
+    signatures=PackageSignatures{{4fe50fc version:4, signatures:[{ids}], past signatures:[{past}]}}
+"""
+# The same from an Android 6 emulator: the bracketed number changes with every install.
+DUMPSYS_23 = """Packages:
+  Package [com.example.app] (8a56907):
+    versionCode={code} targetSdk=35
+    signatures=PackageSignatures{{962990c [4e50255]}}
+"""
+CERT = b"0\x82\x02\xff certificate one"
+OTHER = b"0\x82\x02\xfe certificate two"
+
+
+class InstalledState(unittest.TestCase):
+    def test_cert_id_is_javas_array_hash(self):
+        self.assertEqual(artifact.android_cert_id(b""), "1")
+        self.assertEqual(artifact.android_cert_id(b"\x01"), "20")          # 31 * 1 + 1
+        self.assertEqual(artifact.android_cert_id(b"\xff"), "1e")          # bytes are signed: 31 - 1
+        # Past 32 bits and with negative bytes; both values are what Java's Arrays.hashCode prints.
+        self.assertEqual(artifact.android_cert_id(b"\x7f" * 8), "3b21de81")
+        self.assertEqual(artifact.android_cert_id(b"\xc8" * 40), "ca641f01")
+
+    def test_certs_read_from_the_signing_block(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "a.apk")
+            b.apk(path, b.axml(b.manifest()), v2=True, certs=(CERT, OTHER))
+            self.assertEqual(artifact.signer_certs(path), [CERT, OTHER])
+            report = artifact.inspect(path)
+            self.assertEqual(report["cert_ids"], [artifact.android_cert_id(CERT), artifact.android_cert_id(OTHER)])
+            self.assertEqual(report["certs"][0], hashlib.sha256(CERT).hexdigest())
+            self.assertEqual(report["size"], os.path.getsize(path))
+            b.apk(path, b.axml(b.manifest()), v1=True)
+            self.assertEqual(artifact.signer_certs(path), [])
+            b.apk(path, b.axml(b.manifest()), v2=True)          # a block with no signer in it
+            self.assertEqual(artifact.signer_certs(path), [])
+
+    def test_parse_installed(self):
+        parse = deploy.parse_installed
+        self.assertEqual(parse(DUMPSYS_35.format(code=7, ids="15f777a2", past=""), "com.example.app"),
+                         {"version_code": 7, "cert_ids": ["15f777a2"]})
+        self.assertEqual(parse(DUMPSYS_35.format(code=7, ids="aa, bb", past="cc flags: 17, dd flags: 1"),
+                               "com.example.app")["cert_ids"], ["aa", "bb", "cc", "dd"])
+        self.assertEqual(parse(DUMPSYS_23.format(code=3), "com.example.app"),
+                         {"version_code": 3, "cert_ids": None})
+        for text in ("Unable to find package: com.example.app\n", "", DUMPSYS_35.format(code=1, ids="aa", past="")
+                     .replace("com.example.app", "com.example.application")):
+            self.assertEqual(parse(text, "com.example.app"), {"version_code": None, "cert_ids": None})
+
+    def test_verdicts(self):
+        dev = Device("A", "android", "physical", "ready", api=35)
+        report = {"type": "apk", "build": "7", "cert_ids": ["aa"], "size": 5 * 1024 * 1024}
+        same = {"version_code": 7, "cert_ids": ["aa"], "free_kb": 900000}
+        check = preflight.installed
+        self.assertIsNone(check(report, dev, same))
+        self.assertIsNone(check(report, dev, None))                     # the device could not be asked
+        self.assertIsNone(check(report, dev, {"version_code": None, "cert_ids": None, "free_kb": None}))
+        self.assertIn("different key", check(report, dev, same | {"cert_ids": ["bb"]}))
+        self.assertIsNone(check(report, dev, same | {"cert_ids": ["bb", "aa"]}))    # rotated key: one in common
+        self.assertIsNone(check(report | {"cert_ids": []}, dev, same | {"cert_ids": ["bb"]}))   # v1-only APK
+        self.assertIsNone(check(report | {"type": "aab"}, dev, same | {"cert_ids": ["bb"]}))    # signed later
+        old = Device("B", "android", "physical", "ready", api=34)
+        self.assertIsNone(check(report, old, same | {"cert_ids": ["bb"]}))          # not checked below API 35
+        self.assertEqual(check(report, dev, same | {"version_code": 8}),
+                         "installed app has a newer versionCode (8 > 7); use --clean")
+        self.assertIsNone(check(report, dev, same | {"version_code": 6}))
+        self.assertIn("newer versionCode", check(report | {"type": "aab"}, dev, same | {"version_code": 8}))
+        self.assertEqual(check(report, dev, same | {"free_kb": 4096}),
+                         "not enough storage on the device (4 MB free, build is 5 MB)")
+        self.assertIsNone(check(report, dev, same | {"free_kb": 5 * 1024}))          # exactly enough for the file
+        # --clean removes the installed copy first: none of the three applies.
+        for state in (same | {"cert_ids": ["bb"]}, same | {"version_code": 8}, same | {"free_kb": 1}):
+            self.assertIsNone(check(report, dev, state, clean=True))
+
+
 class InstallCommand(unittest.TestCase):
     def setUp(self):
         self.fake = FakeTools()
@@ -138,6 +218,45 @@ class InstallCommand(unittest.TestCase):
         r = devdrop(self.fake, "install", self.apk, "--dry-run", "--watch")
         self.assertEqual(r.returncode, 2)
         self.assertIn("--dry-run cannot be used with --watch", r.stderr)
+
+    def state_rules(self, serial, dumpsys, free_kb=900000):
+        return [{"match": ["-s", serial, "dumpsys", "package"], "stdout": dumpsys},
+                {"match": ["-s", serial, "dumpsys", "diskstats"],
+                 "stdout": f"Latency: 1ms [512B Data Write]\nData-Free: {free_kb}K / 10167132K total = 8% free\n"}]
+
+    def test_refusals_are_predicted_before_anything_is_sent(self):
+        b.apk(self.apk, b.axml(b.manifest(min_sdk=21, version_code=7)), v2=True, certs=(CERT,))
+        mine = artifact.android_cert_id(CERT)
+        self.adb(devices=[("AAA111", 35, "15", "Pixel 9"), ("BBB222", 35, "15", "Pixel 9a"),
+                          ("CCC333", 35, "15", "Pixel 8"), ("DDD444", 35, "15", "Pixel 7")],
+                 extra=self.state_rules("AAA111", DUMPSYS_35.format(code=7, ids="deadbeef", past=""))
+                 + self.state_rules("BBB222", DUMPSYS_35.format(code=9, ids=mine, past=""))
+                 + self.state_rules("CCC333", DUMPSYS_35.format(code=7, ids=mine, past=""), free_kb=0)
+                 + self.state_rules("DDD444", DUMPSYS_35.format(code=6, ids=mine, past="")))
+        r = devdrop(self.fake, "install", self.apk, "--json")
+        self.assertEqual(r.returncode, 1, r.stderr)
+        recs = {x["id"]: x for x in json.loads(r.stdout)["results"]}
+        self.assertEqual({k: (v["result"], v["stage"]) for k, v in recs.items()},
+                         {"AAA111": ("skipped", "preflight"), "BBB222": ("skipped", "preflight"),
+                          "CCC333": ("skipped", "preflight"), "DDD444": ("ok", "install")})
+        self.assertIn("different key; use --clean", recs["AAA111"]["reason"])
+        self.assertIn("newer versionCode (9 > 7); use --clean", recs["BBB222"]["reason"])
+        self.assertIn("not enough storage", recs["CCC333"]["reason"])
+        self.assertEqual(self.installs(), ["DDD444"])
+
+    def test_clean_installs_over_a_different_key_and_a_newer_version(self):
+        b.apk(self.apk, b.axml(b.manifest(min_sdk=21, version_code=7)), v2=True, certs=(CERT,))
+        self.adb(devices=[("AAA111", 35, "15", "Pixel 9")],
+                 extra=self.state_rules("AAA111", DUMPSYS_35.format(code=9, ids="deadbeef", past="")))
+        r = devdrop(self.fake, "install", self.apk, "--clean", "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.installs(), ["AAA111"])
+
+    def test_a_device_that_cannot_be_asked_still_gets_the_install(self):
+        self.adb(extra=[{"match": ["dumpsys"], "rc": 1, "stderr": "error: closed\n"}])
+        r = devdrop(self.fake, "install", self.apk, "--to", "AAA111", "--json")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.installs(), ["AAA111"])
 
     def test_text_output_and_all_ok_exit_0(self):
         self.adb()

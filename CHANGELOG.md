@@ -5,6 +5,13 @@
 - `install --dry-run`: checks the build against every selected device
   and reports which would take it and which would be skipped, without
   installing or launching anything.
+- `install` asks each Android device what it already holds and skips it
+  before sending when the installed copy has a newer `versionCode`, is
+  signed with a different key (APKs on Android 15 and later), or the
+  device has less free storage than the APK's size. These were reported
+  only after the device refused the upload.
+- `inspect` shows an APK's signing certificates (`certs`, `cert_ids`)
+  and file size.
 
 ## 0.2.0 - 2026-11-20
 

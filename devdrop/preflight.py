@@ -35,6 +35,36 @@ def _android(report, device):
     return None
 
 
+SIGNATURE_API = 35   # lowest Android API level on which the installed signing key was read and checked
+
+
+def installed(report, device, state, clean=False):
+    """A reason the device will refuse this build because of what it already holds, or None.
+
+    state is what the device reported (deploy.Android.installed): the
+    installed copy's versionCode and signing certificates, and free space.
+    Anything the device did not report is not judged. With clean the app is
+    removed first, so its version and key no longer matter.
+    """
+    if not state or report.get("type") not in ("apk", "aab"):
+        return None
+    apk = report["type"] == "apk"
+    if not clean:
+        theirs, ours = state.get("cert_ids"), report.get("cert_ids")
+        # An .aab is signed later; old Android prints a number that is not the certificate's.
+        if apk and theirs and ours and (device.api or 0) >= SIGNATURE_API and not set(theirs) & set(ours):
+            return "installed app is signed with a different key; use --clean"
+        have, new = state.get("version_code"), str(report.get("build", ""))
+        if have is not None and new.isdigit() and have > int(new):
+            return f"installed app has a newer versionCode ({have} > {new}); use --clean"
+        free = state.get("free_kb")
+        # Android needs more room than the file itself, so this only catches the certain case.
+        if apk and free is not None and report.get("size", 0) > free * 1024:
+            return (f"not enough storage on the device ({free // 1024} MB free, "
+                    f"build is {report['size'] // (1024 * 1024)} MB)")
+    return None
+
+
 def _version(text):
     """Version as a 3-part tuple for comparison: "17" -> (17, 0, 0), "18.5b" -> (18, 5, 0)."""
     parts = []

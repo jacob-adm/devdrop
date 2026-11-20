@@ -273,20 +273,25 @@ class B_Android(unittest.TestCase):
         for serial in S["serials"].values():
             with self.subTest(serial=serial, api=S["api"][serial]):
                 rec = recs[serial]
-                if rec["result"] == "ok":
-                    # Some system images let debuggable apps downgrade; then the device must really hold v1.
-                    self.assert_version(serial, 1)
-                else:
-                    self.assertIn("VERSION_DOWNGRADE", rec["reason"])
-                    self.assertIn("use --clean", rec["reason"])
-                    self.assert_version(serial, 2)
+                # devdrop refuses before sending; the device must agree when given the same APK directly.
+                self.assertEqual((rec["result"], rec["stage"], rec["reason"]),
+                                 ("skipped", "preflight", "installed app has a newer versionCode (2 > 1); use --clean"))
+                self.assertIn("INSTALL_FAILED_VERSION_DOWNGRADE", adb(serial, "install", "-r", "-t", apk("app-v1")))
+                self.assert_version(serial, 2)
 
     def test_3_signing_key_clash_then_clean(self):
         rc, out, _ = devdrop("install", apk("app-keyb"), "--to", S["android"], "--json")
         self.assertEqual(rc, 1)
         for rec in out["results"]:
-            self.assertIn("UPDATE_INCOMPATIBLE", rec["reason"])
-            self.assertIn("use --clean", rec["reason"])
+            with self.subTest(serial=rec["id"], api=rec["api"]):
+                self.assertIn("signed with a different key; use --clean", rec["reason"])
+                if rec["api"] >= 35:
+                    # Predicted from the installed certificate; the device must agree.
+                    self.assertEqual((rec["result"], rec["stage"]), ("skipped", "preflight"))
+                    self.assertIn("INSTALL_FAILED_UPDATE_INCOMPATIBLE",
+                                  adb(rec["id"], "install", "-r", "-t", apk("app-keyb")))
+                else:
+                    self.assertEqual((rec["result"], rec["stage"]), ("failed", "install"))
         rc, out, _ = devdrop("install", apk("app-keyb"), "--to", S["android"], "--clean", "--json")
         self.assertEqual(rc, 0, out)
         for serial in S["serials"].values():
