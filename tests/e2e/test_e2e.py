@@ -70,6 +70,15 @@ def simctl(*args):
     return subprocess.run(["xcrun", "simctl", *args], capture_output=True, text=True, timeout=300)
 
 
+def assert_screenshots(case, out):
+    """Every record names a PNG file that exists: what the device showed after launch."""
+    for rec in out["results"]:
+        with case.subTest(screenshot=rec["id"]):
+            case.assertEqual(rec["warnings"], [])
+            with open(rec["screenshot"], "rb") as f:
+                case.assertEqual(f.read(8), b"\x89PNG\r\n\x1a\n")
+
+
 def by_id(out):
     return {r["id"]: r for r in out["results"]}
 
@@ -219,9 +228,13 @@ class B_Android(unittest.TestCase):
         self.assertIn(f"versionCode={code}", adb(serial, "shell", "dumpsys", "package", PACKAGE))
 
     def test_1_clean_install_and_launch_everywhere_at_once(self):
-        rc, out, _ = devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--launch", "--json")
+        shots = tempfile.mkdtemp(prefix="devdrop-e2e-shots-")
+        self.addCleanup(shutil.rmtree, shots, ignore_errors=True)
+        rc, out, _ = devdrop("install", apk("app-v1"), "--to", S["android"], "--clean", "--launch",
+                             "--screenshot", shots, "--json")
         self.assertEqual(rc, 0, out)
         self.assertEqual(out["ok"], len(S["serials"]))
+        assert_screenshots(self, out)
         for rec in out["results"]:      # every result names the device family it came from
             maker = adb(rec["id"], "shell", "getprop", "ro.product.manufacturer").strip()
             self.assertEqual((rec["manufacturer"], rec["api"]), (maker, S["api"][rec["id"]]))
@@ -375,8 +388,12 @@ class C_Ios(unittest.TestCase):
 
     def test_1_app_and_ipa_install_and_launch(self):
         sims = ",".join(S["sims"])
-        rc, out, _ = devdrop("install", ios("ios-sim"), "--to", sims, "--clean", "--launch", "--json")
+        shots = tempfile.mkdtemp(prefix="devdrop-e2e-shots-")
+        self.addCleanup(shutil.rmtree, shots, ignore_errors=True)
+        rc, out, _ = devdrop("install", ios("ios-sim"), "--to", sims, "--clean", "--launch",
+                             "--screenshot", shots, "--json")
         self.assertEqual(rc, 0, out)
+        assert_screenshots(self, out)
         for rec in out["results"]:
             self.assertEqual((rec["manufacturer"], rec["os_version"]), ("Apple", S["sim_os"][rec["id"]]))
         time.sleep(2)

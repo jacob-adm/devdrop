@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `--screenshot DIR` on `install --launch` and `launch`: saves what each
+  Android device, emulator and iOS simulator shows after the app starts,
+  one PNG per device. A physical iPhone gets a warning instead.
+
 ## 0.1.1 - 2026-11-19
 
 - `install --watch` waits until a newly seen Android device has finished

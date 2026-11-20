@@ -40,8 +40,12 @@ for r in rules:
             os.remove(r["remove"])
         if "write_after" in r:
             path = argv[argv.index(r["write_after"]) + 1]
-            with open(path, "w", encoding="utf-8") as out:
-                out.write(r["file"])
+            if "file_hex" in r:                         # a binary file, such as an image
+                with open(path, "wb") as out:
+                    out.write(bytes.fromhex(r["file_hex"]))
+            else:
+                with open(path, "w", encoding="utf-8") as out:
+                    out.write(r["file"])
         sys.stdout.write(r.get("stdout", ""))
         sys.stderr.write(r.get("stderr", ""))
         sys.exit(r.get("rc", 0))

@@ -27,6 +27,8 @@ def write(path, command, records):
         details += [f"warning: {w}" for w in r.get("warnings", [])]
         if r.get("log"):
             details.append(f"log: {r['log']}")
+        if r.get("screenshot"):
+            details.append(f"screenshot: {r['screenshot']}")
         ET.SubElement(case, "system-out").text = "\n".join(details)
     # Wrapped in <testsuites>: the root most CI parsers expect.
     tree = ET.ElementTree(ET.Element("testsuites"))
