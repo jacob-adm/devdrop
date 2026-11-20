@@ -12,6 +12,10 @@
   only after the device refused the upload.
 - `inspect` shows an APK's signing certificates (`certs`, `cert_ids`)
   and file size.
+- `install` accepts an Android build and an iOS build in one run:
+  `devdrop install app.apk app.ipa`. Each device gets its platform's
+  build and one report covers both. Every `--json` install record now
+  has `artifact`, the path of the build it was for.
 
 ## 0.2.0 - 2026-11-20
 

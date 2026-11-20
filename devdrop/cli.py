@@ -288,11 +288,15 @@ def _counts(records, as_json):
     return OK if counts["ok"] == len(records) else PARTIAL
 
 
-def _print_record(rec):
-    """One result line per device, then any warnings and the log path; flushed immediately."""
+def _print_record(rec, with_artifact=False):
+    """One result line per device, then any warnings and the log path; flushed immediately.
+
+    with_artifact (a run with several builds) adds the build's file name to the line.
+    """
     label = " ".join(x for x in (rec["id"], rec["name"]) if x)
     detail = f"{rec['stage']}: {rec['reason']}" if rec["reason"] else rec["stage"]
-    print(f"{rec['result']:8} {safe(label)}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
+    build = f"  [{safe(os.path.basename(rec['artifact'].rstrip('/')))}]" if with_artifact and rec.get("artifact") else ""
+    print(f"{rec['result']:8} {safe(label)}{build}  {safe(detail)}  ({rec['seconds']}s)", flush=True)
     for note in rec.get("warnings", []):
         print(f"{'':8} warning: {safe(note)}", flush=True)
     if rec.get("log"):
@@ -418,22 +422,32 @@ def cmd_shutdown(args):
 
 
 def cmd_install(args):
-    """`install`: read the build, pick devices of its platform, install on all at once, report.
+    """`install`: read each build, pick devices of its platform, install on all at once, report.
 
     Steps: inspect -> optional --boot -> select devices -> prepare (.aab signing,
     .ipa unpack) in a temp dir removed afterwards -> fan out -> optional --watch -> summary.
+    Several builds, one per platform, share one run: each device gets its platform's build.
     """
     cfg = _load_config(args)
     if cfg is None:
         return USAGE
-    try:
-        report = artifact.inspect(args.path)
-    except artifact.ArtifactError as e:
-        print(f"devdrop: {safe(e)}", file=sys.stderr)
-        return USAGE
+    reports = {}                        # platform -> the build for it
+    for path in args.path:
+        try:
+            report = artifact.inspect(path)
+        except artifact.ArtifactError as e:
+            print(f"devdrop: {safe(e)}", file=sys.stderr)
+            return USAGE
+        other = reports.get(report["platform"])
+        if other:
+            print(f"devdrop: {safe(other['path'])} and {safe(path)} are both {report['platform']} builds; "
+                  "give one build per platform", file=sys.stderr)
+            return USAGE
+        reports[report["platform"]] = report
+    platforms = tuple(reports)
     booted = []
     if args.boot:
-        booted, code = _boot(args, cfg, (report["platform"],))
+        booted, code = _boot(args, cfg, platforms)
         if code is not None:
             return code
     if args.logs and not args.launch:
@@ -450,42 +464,59 @@ def cmd_install(args):
         return USAGE
     log = _launch_log(args)
     shot = _launch_shot(args)
-    # Only the build's platform is queried: an APK never waits on Xcode, an IPA never on adb.
-    found = _targets(args, cfg, (report["platform"],), allow_empty=args.watch)
+    # Only the builds' platforms are queried: an APK never waits on Xcode, an IPA never on adb.
+    found = _targets(args, cfg, platforms, allow_empty=args.watch)
     if isinstance(found, int):
         return found
     chosen, backends = found
-    backend = backends[report["platform"]]
+    for platform, report in reports.items():
+        if platform not in backends:    # with one build _targets has already returned NO_TOOLS
+            tool = "adb" if platform == "android" else "xcrun (macOS with Xcode)"
+            print(f"devdrop: {safe(report['path'])}: {tool} not found", file=sys.stderr)
+            return NO_TOOLS
     # With --watch, devices not ready or still booting are picked up later instead of reported now.
-    chosen = [d for d in chosen if d.state == READY and backend.booted(d)] if args.watch else chosen
+    chosen = [d for d in chosen if d.state == READY and backends[d.platform].booted(d)] if args.watch else chosen
+    # A build no device matched was not delivered: with several builds that fails the run.
+    unmatched = [] if args.watch else [r for p, r in reports.items() if not any(d.platform == p for d in chosen)]
+    for report in unmatched:
+        print(f"devdrop: {safe(report['path'])}: no {report['platform']} device matches --to {safe(args.to)}",
+              file=sys.stderr)
+    several = len(reports) > 1
+    show = None if args.json else (lambda rec: _print_record(rec, several))
     with tempfile.TemporaryDirectory(prefix="devdrop-") as tmp:
-        if report["type"] == "aab":
-            try:
-                backend.bundle = (bundle.find_bundletool(), bundle.signing(args.ks, args.ks_alias, tmp), tmp)
-            except bundle.BundleError as e:
-                print(f"devdrop: {safe(e)}", file=sys.stderr)
-                return NO_TOOLS if isinstance(e, bundle.BundletoolMissing) else USAGE
-        if report["type"] == "ipa":
-            try:
-                report["app_path"] = deploy.unpack_ipa(report["path"], tmp)
-            except (deploy.StepError, OSError, zipfile.BadZipFile) as e:
-                print(f"devdrop: {safe(args.path)}: {safe(e)}", file=sys.stderr)
-                return USAGE
+        for report in reports.values():
+            if report["type"] == "aab":
+                try:
+                    backends["android"].bundle = (bundle.find_bundletool(),
+                                                  bundle.signing(args.ks, args.ks_alias, tmp), tmp)
+                except bundle.BundleError as e:
+                    print(f"devdrop: {safe(e)}", file=sys.stderr)
+                    return NO_TOOLS if isinstance(e, bundle.BundletoolMissing) else USAGE
+            if report["type"] == "ipa":
+                try:
+                    report["app_path"] = deploy.unpack_ipa(report["path"], tmp)
+                except (deploy.StepError, OSError, zipfile.BadZipFile) as e:
+                    print(f"devdrop: {safe(report['path'])}: {safe(e)}", file=sys.stderr)
+                    return USAGE
+
         def work(dev):
-            """Install on one device with this run's options."""
-            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot, args.url or "",
-                                      args.dry_run)
-        records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
+            """Install this device's platform's build with this run's options."""
+            report = reports[dev.platform]
+            rec = deploy.install_one(backends[dev.platform], dev, report, args.clean, args.launch, log, shot,
+                                     args.url or "", args.dry_run)
+            return rec | {"artifact": report["path"]}
+        records = deploy.fan_out(chosen, work, args.jobs, show)
         if args.watch:
-            records += _watch(args, cfg, report["platform"], backend, {r["id"] for r in records}, work)
+            records += _watch(args, cfg, platforms, backends, {r["id"] for r in records}, work, show)
     if args.watch and not records:
         print("devdrop: no device appeared", file=sys.stderr)
         return NO_DEVICES
     # Failed boots count against the run; successful boots are not install results.
-    return _summary([r for r in booted if r["result"] != "ok"] + records, args)
+    code = _summary([r for r in booted if r["result"] != "ok"] + records, args)
+    return PARTIAL if unmatched and code == OK else code
 
 
-def _watch(args, cfg, platform, backend, handled, work):
+def _watch(args, cfg, platforms, backends, handled, work, show):
     """Install on each matching device that becomes ready, once, until Ctrl-C or the timeout."""
     deadline = time.monotonic() + args.watch_timeout if args.watch_timeout else None
     if not args.json:
@@ -494,15 +525,15 @@ def _watch(args, cfg, platform, backend, handled, work):
     try:
         while deadline is None or time.monotonic() < deadline:
             time.sleep(WATCH_POLL if deadline is None else max(0.0, min(WATCH_POLL, deadline - time.monotonic())))
-            devices, _ = inventory(platforms=(platform,))
+            devices, _ = inventory(platforms=platforms)
             for d in devices:
                 d.name = _name(cfg, d)
             # A device still booting is left for a later scan, not installed on and not marked handled.
             new = [d for d in select(devices, args.to, cfg)
-                   if d.state == READY and d.id not in handled and backend.booted(d)]
+                   if d.state == READY and d.id not in handled and backends[d.platform].booted(d)]
             if new:
                 handled.update(d.id for d in new)
-                records += deploy.fan_out(new, work, args.jobs, None if args.json else _print_record)
+                records += deploy.fan_out(new, work, args.jobs, show)
     except KeyboardInterrupt:
         pass                            # Ctrl-C ends the watch normally: summary and exit code follow
     return records
@@ -641,7 +672,8 @@ def build_parser():
     i.add_argument("--json", action="store_true", help="machine-readable output")
     i.set_defaults(func=cmd_inspect)
     ins = sub.add_parser("install", help="install a build on every selected device")
-    ins.add_argument("path")
+    ins.add_argument("path", nargs="+", metavar="PATH",
+                     help="an .apk, .aab, .ipa or .app; an Android and an iOS build can be given together")
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
     ins.add_argument("--dry-run", action="store_true",

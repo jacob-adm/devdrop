@@ -68,7 +68,7 @@ developer, 7-day builds on a free account): see
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
-devdrop install PATH [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
+devdrop install PATH [PATH] [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
                 [--screenshot DIR [--screenshot-seconds N]] [--url URL]
@@ -89,6 +89,7 @@ See [Commands](https://github.com/jacob-adm/devdrop/blob/main/docs/commands.md) 
 devdrop devices                          # what is attached, and what is ready
 devdrop install app.apk --launch         # every ready Android device at once
 devdrop install app.ipa --to physical    # iPhones and iPads only
+devdrop install app.apk app.ipa          # both builds of a release, one report
 devdrop boot --to my_avd                 # start a stopped emulator by name
 ```
 
