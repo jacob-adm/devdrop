@@ -197,6 +197,25 @@ class DoctorCommand(unittest.TestCase):
         self.assertIn("tap Trust", r.stdout)
         self.assertIn("Xcode 26.2", r.stdout)
 
+    def test_selected_xcode_and_simulator_runtimes(self):
+        runtimes = {"runtimes": [
+            {"name": "iOS 26.3", "platform": "iOS", "isAvailable": True},
+            {"name": "iOS 17.0", "platform": "iOS", "isAvailable": False},     # downloaded, not usable
+            {"name": "watchOS 26.2", "platform": "watchOS", "isAvailable": True}]}
+        for doc, want in ((runtimes, "ok  ios simulator runtimes: iOS 26.3"),
+                          ({"runtimes": []}, "ok  ios simulator runtimes: none installed - to add one: "
+                                             "xcodebuild -downloadPlatform iOS")):
+            with self.subTest(want=want):
+                self.fake.add("adb", adb_rules())
+                self.fake.add("xcrun", [{"match": ["simctl", "list", "runtimes"], "stdout": json.dumps(doc)}]
+                              + xcrun_rules())
+                self.fake.add("xcodebuild", XCODEBUILD_RULES)
+                self.fake.add("xcode-select", [{"match": ["-p"],
+                                                "stdout": "/Applications/Xcode-26.2.app/Contents/Developer\n"}])
+                out = devdrop(self.fake, "doctor").stdout
+                self.assertIn("xcode: Xcode 26.2 (/Applications/Xcode-26.2.app/Contents/Developer)", out)
+                self.assertIn(want, out)
+
     def test_all_ready_exits_0(self):
         ready_only = "List of devices attached\nemulator-5554 device transport_id:1\n"
         self.fake.add("adb", adb_rules(ready_only))
@@ -207,6 +226,9 @@ class DoctorCommand(unittest.TestCase):
         r = devdrop(self.fake, "doctor")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("!!", r.stdout)
+        # no xcode-select and a simctl that lists no runtimes: neither line is guessed
+        self.assertIn("ok  xcode: Xcode 26.2\n", r.stdout.replace("\r\n", "\n"))
+        self.assertNotIn("simulator runtimes", r.stdout)
 
 
 if __name__ == "__main__":

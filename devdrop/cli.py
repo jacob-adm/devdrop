@@ -183,11 +183,18 @@ def cmd_doctor(args):
     xcrun = find_xcrun()
     if xcrun:
         version, err = _version_line(["xcodebuild", "-version"])
-        line(err is None, f"xcode: {err or version}")
+        # With several Xcodes installed, every xcrun call uses the one xcode-select points at.
+        selected, _ = _version_line(["xcode-select", "-p"])
+        line(err is None, f"xcode: {err or version}" + (f" ({selected})" if selected else ""))
         problems += err is not None
         has = ios.has_devicectl(xcrun)
         line(has, "devicectl found" if has else "devicectl not found: needs Xcode 15 or later")
         problems += not has
+        runtimes = ios.simulator_runtimes(xcrun)
+        # No runtime is not a fault (physical iPhones need none): say how to get one.
+        if runtimes is not None:
+            line(True, "ios simulator runtimes: " + (", ".join(runtimes) if runtimes else
+                 "none installed - to add one: xcodebuild -downloadPlatform iOS"))
     else:
         line(False, "xcrun not found: iOS needs macOS with Xcode (Android works without it)")
         problems += 1

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `doctor` shows which Xcode `xcode-select` points at and the installed
+  iOS simulator runtimes, with the command to download one when there
+  is none.
 - `--url URL` on `install --launch` and `launch`: opens a link in the app
   on every device, for testing deep links.
 - `--screenshot DIR` on `install --launch` and `launch`: saves what each
