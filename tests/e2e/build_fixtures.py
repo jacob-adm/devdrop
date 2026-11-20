@@ -45,7 +45,13 @@ NATIVE = {"app-native4k": (4096, ["-p"]), "app-native16k": (16384, ["-P", "16"])
 MANIFEST = """<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}">
   <application android:label="devdrop e2e" android:debuggable="{debuggable}" android:hasCode="true"{extract}>
-    <activity android:name=".Main" android:exported="true">{main_filter}</activity>{aliases}
+    <activity android:name=".Main" android:exported="true">{main_filter}
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="devdrop-e2e"/>
+      </intent-filter></activity>{aliases}
   </application>
 </manifest>
 """
@@ -292,6 +298,7 @@ def build_ios(out, work):
             "CFBundleIdentifier": PACKAGE, "CFBundleExecutable": "E2E", "CFBundleName": "E2E",
             "CFBundlePackageType": "APPL", "CFBundleShortVersionString": "1.0", "CFBundleVersion": "1",
             "MinimumOSVersion": min_os, "UIDeviceFamily": families, "UILaunchScreen": {},
+            "CFBundleURLTypes": [{"CFBundleURLName": PACKAGE, "CFBundleURLSchemes": ["devdrop-e2e"]}],
             "CFBundleSupportedPlatforms": ["iPhoneSimulator" if sdk == "iphonesimulator" else "iPhoneOS"],
         }
         import plistlib

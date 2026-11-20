@@ -101,8 +101,11 @@ def _set_up():
     subprocess.run([os.path.join(bindir, "python"), "-m", "pip", "install", "-q", REPO], check=True)
     S["devdrop"] = os.path.join(bindir, "devdrop")
     index = os.path.join(CACHE, "index.json")
-    if os.environ.get("DEVDROP_E2E_REBUILD") or not os.path.exists(index):
-        subprocess.run([sys.executable, os.path.join(HERE, "build_fixtures.py"), CACHE], check=True,
+    builder = os.path.join(HERE, "build_fixtures.py")
+    # Rebuild when asked, when nothing is cached, or when the builder changed after the last build.
+    if (os.environ.get("DEVDROP_E2E_REBUILD") or not os.path.exists(index)
+            or os.path.getmtime(builder) > os.path.getmtime(index)):
+        subprocess.run([sys.executable, builder, CACHE], check=True,
                        stdout=subprocess.DEVNULL)
     with open(index) as f:
         S["fx"] = json.load(f)
@@ -245,6 +248,20 @@ class B_Android(unittest.TestCase):
                 self.assert_version(serial, 1)
                 top = adb(serial, "shell", "dumpsys", "activity", "activities")
                 self.assertIn(f"{PACKAGE}/.Main", top)
+
+    def test_1b_launch_at_a_url(self):
+        url = "devdrop-e2e://open?x=1&y=2"                  # "&" and "?" must survive the device shell
+        rc, out, _ = devdrop("launch", PACKAGE, "--to", S["android"], "--url", url, "--json")
+        self.assertEqual((rc, out["ok"]), (0, len(S["serials"])), out)
+        time.sleep(2)
+        for serial in S["serials"].values():
+            with self.subTest(serial=serial):
+                self.assertIn(f"dat={url}", adb(serial, "shell", "dumpsys", "activity", "activities"))
+        rc, out, _ = devdrop("launch", PACKAGE, "--to", S["android"], "--url", "nobody-e2e://open", "--json")
+        self.assertEqual(rc, 1)
+        for rec in out["results"]:
+            self.assertEqual((rec["result"], rec["stage"], rec["reason"]),
+                             ("failed", "launch", "the app has no activity that opens this URL (is it installed?)"))
 
     def test_2_upgrade_then_downgrade(self):
         rc, out, _ = devdrop("install", apk("app-v2"), "--to", S["android"], "--json")
@@ -402,6 +419,17 @@ class C_Ios(unittest.TestCase):
             self.assertTrue(self.running(udid))
         rc, out, _ = devdrop("install", ios("ios-sim", ipa=True), "--to", sims, "--clean", "--launch", "--json")
         self.assertEqual(rc, 0, out)
+
+    def test_1b_launch_at_a_url(self):
+        sims = ",".join(S["sims"])
+        rc, out, _ = devdrop("launch", PACKAGE, "--to", sims, "--url", "devdrop-e2e://open?x=1&y=2", "--json")
+        self.assertEqual((rc, out["ok"]), (0, len(S["sims"])), out)
+        for udid in S["sims"]:
+            self.assertTrue(self.running(udid))
+        rc, out, _ = devdrop("launch", PACKAGE, "--to", sims, "--url", "nobody-e2e://open", "--json")
+        self.assertEqual(rc, 1, out)
+        for rec in out["results"]:
+            self.assertEqual((rec["result"], rec["stage"]), ("failed", "launch"))
 
     def test_2_preflight_skips(self):
         sims = ",".join(S["sims"])

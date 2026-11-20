@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import shlex
 import stat
 import tempfile
 import time
@@ -224,12 +225,24 @@ class Android:
             else android_failure(out)
         raise StepError("uninstall", reason)
 
-    def launch(self, dev, package, fallback=""):
-        """Start the app's launcher activity; raise StepError if Android refuses.
+    def launch(self, dev, package, fallback="", url=""):
+        """Start the app's launcher activity, or open url in the app; raise StepError if Android refuses.
 
         Order: ask the device (resolve-activity), else the launcher read from the
         manifest (fallback), else monkey. The first two give a clear error from `am start`.
         """
+        if url:
+            # The package at the end limits the intent to this app. adb hands the line to the
+            # device's shell, so the URL is quoted: "&" and "?" must reach am untouched.
+            r = self._adb(dev, "shell", "am", "start", "-a", "android.intent.action.VIEW",
+                          "-d", shlex.quote(url), package)
+            out = r.out + r.err
+            if "unable to resolve Intent" in out:
+                raise StepError("launch", "the app has no activity that opens this URL (is it installed?)")
+            if r.rc != 0 or "Error" in out:
+                line = next((ln for ln in out.splitlines() if "Error" in ln), out.strip())
+                raise StepError("launch", line.strip() or f"am start exit {r.rc}")
+            return
         r = self._adb(dev, "shell", "cmd", "package", "resolve-activity", "--brief",
                       "-c", "android.intent.category.LAUNCHER", package)
         # Old Android (API 23 and below) has no `cmd`; its shell still exits 0 and
@@ -414,24 +427,28 @@ class Ios:
             return None
         return any(p.get("executable", "").startswith(folder + "/") for p in procs.get("runningProcesses", []))
 
-    def launch(self, dev, bundle_id, fallback=""):
-        """Start the app, restarting it if already running. fallback is unused on iOS."""
+    def launch(self, dev, bundle_id, fallback="", url=""):
+        """Start the app, restarting it if already running; with url, open it. fallback is unused on iOS."""
         if dev.kind == "simulator":
             r = self._run("simctl", "launch", "--terminate-running-process", dev.id, bundle_id)
+            if r.rc == 0 and url:
+                # simctl has no "open in this app": iOS gives the URL to whichever app claims it.
+                r = self._run("simctl", "openurl", dev.id, url)
         else:
+            link = ["--payload-url", url] if url else []
             r = self._run("devicectl", "device", "process", "launch", "--device", dev.id,
-                          "--terminate-existing", bundle_id)
+                          "--terminate-existing", *link, bundle_id)
         self._check("launch", r)
 
 
-def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None):
+def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None, url=""):
     """Launch; with --logs, watch the app for a while; with --screenshot, save the screen.
 
     Returns (failure reason or "", extra record fields or None, warnings).
     """
     if log:
         backend.prepare_logs(dev)
-    backend.launch(dev, app_id, fallback)
+    backend.launch(dev, app_id, fallback, url)
     launched = time.monotonic()
     died, extra, notes = "", None, []
     if log:
@@ -453,7 +470,7 @@ def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None):
     return died, extra, notes
 
 
-def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=None):
+def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=None, url=""):
     """Full install on one device: preflight, optional clean, install, optional launch and watch.
 
     Never raises: every outcome becomes a record (ok, skipped at preflight, failed at a stage).
@@ -470,7 +487,7 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=
         backend.install(dev, report)
         if launch:
             died, extra, more = _launch_and_watch(backend, dev, report["id"], log,
-                                                  report.get("launcher", ""), shot)
+                                                  report.get("launcher", ""), shot, url)
             notes += more
             if died:
                 return record(dev, "failed", "running", died, started, notes, extra)
@@ -481,7 +498,7 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=
     return record(dev, "ok", "launch" if launch else "install", "", started, notes, extra)
 
 
-def by_id_one(action, backend, dev, app_id, log=None, shot=None):
+def by_id_one(action, backend, dev, app_id, log=None, shot=None, url=""):
     """launch or uninstall an installed app on one device; never raises, returns a record."""
     started = time.monotonic()
     if dev.state != "ready":
@@ -489,7 +506,7 @@ def by_id_one(action, backend, dev, app_id, log=None, shot=None):
     extra, notes = None, []
     try:
         if action == "launch":
-            died, extra, notes = _launch_and_watch(backend, dev, app_id, log, shot=shot)
+            died, extra, notes = _launch_and_watch(backend, dev, app_id, log, shot=shot, url=url)
             if died:
                 return record(dev, "failed", "running", died, started, notes, extra)
         else:

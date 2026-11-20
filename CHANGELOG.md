@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `--url URL` on `install --launch` and `launch`: opens a link in the app
+  on every device, for testing deep links.
 - `--screenshot DIR` on `install --launch` and `launch`: saves what each
   Android device, emulator and iOS simulator shows after the app starts,
   one PNG per device. A physical iPhone gets a warning instead.
