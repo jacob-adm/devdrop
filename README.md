@@ -8,7 +8,7 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: 0.1.0, the first release. Not yet on PyPI.
+Status: 0.1.1. Not yet on PyPI.
 
 ## Install
 
