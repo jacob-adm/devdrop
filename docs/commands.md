@@ -24,6 +24,11 @@ emulator, simulator), model, OS version and state. Only `ready` devices
 take installs; any other state names what needs doing, and `doctor` gives
 the fix. Simulators are listed when booted; `--all` adds shut-down ones.
 
+On a Mac, `doctor` also shows which Xcode is selected (`xcode-select -p`;
+every `xcrun` call uses that one) and the installed iOS simulator
+runtimes. With none installed no simulator can be listed; `doctor` then
+names the command that downloads one, `xcodebuild -downloadPlatform iOS`.
+
 ## inspect
 
 `inspect` reads the build directly, without the platform tools:

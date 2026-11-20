@@ -112,3 +112,20 @@ def list_simulators(xcrun, include_shutdown=False):
     except ValueError as e:
         raise ToolError(f"simctl list: unreadable JSON ({e})")
     return parse_simctl(doc, include_shutdown)
+
+
+def simulator_runtimes(xcrun):
+    """Names of the installed iOS simulator runtimes, or None when simctl does not say.
+
+    An empty list is why `devices` shows no simulator on a Mac that has Xcode.
+    """
+    try:
+        res = run([xcrun, "simctl", "list", "-j", "runtimes"])
+        runtimes = json.loads(res.out).get("runtimes") if res.rc == 0 else None
+    except (ToolError, ValueError, AttributeError):
+        return None
+    if not isinstance(runtimes, list):
+        return None
+    return [str(r.get("name", "")) for r in runtimes
+            if isinstance(r, dict) and r.get("isAvailable", True)
+            and str(r.get("platform") or r.get("name", "")).startswith("iOS")]

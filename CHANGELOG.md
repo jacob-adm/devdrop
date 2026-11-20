@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `doctor` shows which Xcode `xcode-select` points at and the installed
+  iOS simulator runtimes, with the command to download one when there
+  is none.
+
 ## 0.1.1 - 2026-11-19
 
 - `install --watch` waits until a newly seen Android device has finished
