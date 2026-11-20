@@ -148,8 +148,9 @@ class InstalledState(unittest.TestCase):
         self.assertIsNone(check(report, dev, same | {"cert_ids": ["bb", "aa"]}))    # rotated key: one in common
         self.assertIsNone(check(report | {"cert_ids": []}, dev, same | {"cert_ids": ["bb"]}))   # v1-only APK
         self.assertIsNone(check(report | {"type": "aab"}, dev, same | {"cert_ids": ["bb"]}))    # signed later
-        old = Device("B", "android", "physical", "ready", api=34)
-        self.assertIsNone(check(report, old, same | {"cert_ids": ["bb"]}))          # not checked below API 35
+        for api, checked in ((27, False), (28, True), (34, True)):                   # checked from Android 9
+            other = check(report, Device("B", "android", "physical", "ready", api=api), same | {"cert_ids": ["bb"]})
+            self.assertEqual(other is not None, checked, api)
         self.assertEqual(check(report, dev, same | {"version_code": 8}),
                          "installed app has a newer versionCode (8 > 7); use --clean")
         self.assertIsNone(check(report, dev, same | {"version_code": 6}))

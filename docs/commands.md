@@ -73,7 +73,7 @@ skips it when Android is certain to refuse the build:
 
 - the installed copy has a newer `versionCode` (a downgrade);
 - the installed copy is signed with a different key. This is checked for
-  an APK on Android 15 and later, where the device reports the installed
+  an APK on Android 9 and later, where the device reports the installed
   certificate; an APK signed with a rotated key passes when either of
   its certificates matches. Older Android versions and App Bundles are
   not checked;

@@ -35,7 +35,7 @@ def _android(report, device):
     return None
 
 
-SIGNATURE_API = 35   # lowest Android API level on which the installed signing key was read and checked
+SIGNATURE_API = 28   # Android 9: the first version whose dumpsys names the installed certificate
 
 
 def installed(report, device, state, clean=False):
