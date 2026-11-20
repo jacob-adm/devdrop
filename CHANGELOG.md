@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `install --dry-run`: checks the build against every selected device
+  and reports which would take it and which would be skipped, without
+  installing or launching anything.
+
 ## 0.2.0 - 2026-11-20
 
 - `doctor` shows which Xcode `xcode-select` points at and the installed

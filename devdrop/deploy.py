@@ -16,6 +16,7 @@ from devdrop import bundle, preflight
 from devdrop.tools import ToolError, run
 
 INSTALL_TIMEOUT = 600  # seconds for one install; large apps over Wi-Fi take minutes
+DRY_RUN = "would install; nothing was sent (dry run)"   # the reason on an ok record from --dry-run
 
 # adb failure codes and what to do about them.
 ANDROID_FAILURES = {
@@ -470,16 +471,20 @@ def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None, url="")
     return died, extra, notes
 
 
-def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=None, url=""):
+def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=None, url="",
+                dry_run=False):
     """Full install on one device: preflight, optional clean, install, optional launch and watch.
 
     Never raises: every outcome becomes a record (ok, skipped at preflight, failed at a stage).
+    dry_run stops after the preflight: the record says what would happen and nothing is sent.
     """
     started = time.monotonic()
     reason = preflight.check(report, dev)
     if reason:
         return record(dev, "skipped", "preflight", reason, started)
     notes = list(preflight.warnings(report, dev))
+    if dry_run:
+        return record(dev, "ok", "preflight", DRY_RUN, started, notes, {"dry_run": True})
     extra = None
     try:
         if clean:

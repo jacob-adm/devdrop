@@ -6,7 +6,7 @@ What each devdrop command does, what `install` checks first, and the exit codes.
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
-devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
+devdrop install PATH [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
                 [--screenshot DIR [--screenshot-seconds N]] [--url URL]
@@ -67,6 +67,15 @@ page-size compatibility mode, which shows a warning on first launch.
 Install failures from the device are translated too (for example a signing-key clash says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards.
+
+With `--dry-run`, `install` stops after those checks. Each device that
+would take the build is reported `ok` at stage `preflight` with
+`would install; nothing was sent (dry run)` (and `"dry_run": true` in
+`--json`); the others are skipped with their reason. Nothing is
+installed, uninstalled or launched, and the exit code follows the usual
+rule, so a CI job can fail before a release when a device in the lab
+would be left out. `--dry-run` cannot be combined with `--watch`;
+`--boot` still starts the devices it names.
 
 Each device's result prints as it
 finishes, followed by a count. With `--json`, every result also names
