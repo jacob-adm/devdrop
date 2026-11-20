@@ -6,7 +6,7 @@ What each devdrop command does, what `install` checks first, and the exit codes.
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
-devdrop install PATH [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
+devdrop install PATH [PATH] [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
                 [--screenshot DIR [--screenshot-seconds N]] [--url URL]
@@ -95,6 +95,15 @@ installed, uninstalled or launched, and the exit code follows the usual
 rule, so a CI job can fail before a release when a device in the lab
 would be left out. `--dry-run` cannot be combined with `--watch`;
 `--boot` still starts the devices it names.
+
+`install` takes one build, or an Android build and an iOS build
+together (`devdrop install app.apk app.ipa`): each device gets the build
+for its platform, and the summary, exit code, `--json` and `--junit`
+cover both. Each line then names its build, and every `--json` record
+carries the build's path in `artifact`. Two builds for the same platform
+are a usage error. If the tool for one build's platform is missing,
+nothing is sent and the exit code is 4. A build that no selected device
+matched is named on stderr and the run exits 1.
 
 Each device's result prints as it
 finishes, followed by a count. With `--json`, every result also names
