@@ -6,14 +6,16 @@ import os
 import re
 import shlex
 import stat
+import subprocess
 import tempfile
 import time
 import zipfile
+from urllib.parse import unquote
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from devdrop import bundle, preflight
-from devdrop.tools import ToolError, run
+from devdrop.tools import ToolError, run, start
 
 INSTALL_TIMEOUT = 600  # seconds for one install; large apps over Wi-Fi take minutes
 DRY_RUN = "would install; nothing was sent (dry run)"   # the reason on an ok record from --dry-run
@@ -243,6 +245,9 @@ class Android:
         """Clear the main and crash log buffers so the watch window shows only this launch."""
         self._adb(dev, "logcat", "-b", "main", "-b", "crash", "-c")
 
+    def discard_logs(self, dev):
+        """Nothing to stop: Android's log is read once, after the watch."""
+
     def observe(self, dev, package, log):
         """After launch: is the app still running, and the device log for the window."""
         time.sleep(log.seconds)
@@ -334,6 +339,13 @@ def ios_failure(text):
     return first
 
 
+def _pmd3_failure(text):
+    """pymobiledevice3's last line without its "date host logger[pid] LEVEL" prefix."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip() and "Run again with -v" not in ln]
+    last = lines[-1] if lines else "pymobiledevice3 failed"
+    return re.sub(r"^\S+ \S+ \S+ \S+\[\d+\] [A-Z]+ ", "", last)[:300]
+
+
 def unpack_ipa(ipa, dest):
     """Extract Payload/*.app from an IPA into dest, keeping file modes. Returns the .app path."""
     with zipfile.ZipFile(ipa) as z:
@@ -362,11 +374,32 @@ def unpack_ipa(ipa, dest):
     return os.path.join(dest, app)
 
 
-class Ios:
-    """Install, launch, uninstall and launch-watching for iPhones (devicectl) and simulators (simctl)."""
+LOG_START = 8.0   # seconds to wait for a physical iPhone's log stream to begin before launching
+# A line of the device log: "2026-11-20 16:49:01.157354 Process{Image}[110] <NOTICE>: text".
+_SYSLOG_PROCESS = re.compile(r"^\S+ \S+ ([^\[{]+)[\[{]")
 
-    def __init__(self, xcrun):
+
+def process_lines(text, names):
+    """The lines of a device log written by any of the named processes."""
+    keep = []
+    for line in text.splitlines(keepends=True):
+        m = _SYSLOG_PROCESS.match(line)
+        if m and m.group(1).strip() in names:
+            keep.append(line)
+    return "".join(keep)
+
+
+class Ios:
+    """Install, launch, uninstall and launch-watching for iPhones (devicectl) and simulators (simctl).
+
+    devicectl has no log or screenshot command. With pmd3, the path of the
+    optional pymobiledevice3 tool, a physical device gets both.
+    """
+
+    def __init__(self, xcrun, pmd3=None):
         self.xcrun = xcrun
+        self.pmd3 = pmd3
+        self._captures = {}             # device id -> (log process, file it writes) during a launch watch
 
     def _run(self, *args, timeout=120):
         """Run an xcrun subcommand (devicectl or simctl)."""
@@ -381,10 +414,17 @@ class Ios:
         return None
 
     def screenshot(self, dev, path):
-        """Save a simulator's screen as a PNG. devicectl has no screenshot command for real devices."""
-        if dev.kind != "simulator":
+        """Save the screen as a PNG: simctl for a simulator, pymobiledevice3 (if present) for a device."""
+        if dev.kind == "simulator":
+            self._check("screenshot", self._run("simctl", "io", dev.id, "screenshot", path))
+        elif self.pmd3:
+            # --userspace: the tunnel iOS 17 and later needs, without root.
+            r = run([self.pmd3, "--no-color", "developer", "dvt", "screenshot", "--userspace",
+                     "--udid", dev.id, path], timeout=60)
+            if r.rc != 0:
+                raise StepError("screenshot", _pmd3_failure(r.err or r.out))
+        else:
             raise StepError("screenshot", "not available on a physical iPhone or iPad")
-        self._check("screenshot", self._run("simctl", "io", dev.id, "screenshot", path))
         _require_png(path)
 
     def _check(self, stage, r):
@@ -426,14 +466,58 @@ class Ios:
         self._check("uninstall", r)
 
     def prepare_logs(self, dev):
-        """Nothing to clear on iOS."""
-        pass                                    # iOS logs are read for a time window after launch
+        """Physical device with pymobiledevice3: start reading its log, so the launch is in it.
+
+        Simulators need nothing here: their log is read back for a time window after launch.
+        """
+        if dev.kind == "simulator" or not self.pmd3:
+            return
+        fd, path = tempfile.mkstemp(prefix="devdrop-", suffix=".syslog")
+        os.close(fd)
+        try:
+            proc = start([self.pmd3, "--no-color", "syslog", "live", "--no-debug", "--udid", dev.id], path)
+        except ToolError:
+            os.unlink(path)
+            return
+        self._captures[dev.id] = (proc, path)
+        # The stream takes a moment to begin; a device always has something to say once it has.
+        deadline = time.monotonic() + LOG_START
+        while os.path.getsize(path) == 0 and proc.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+    def discard_logs(self, dev):
+        """Stop a log capture whose launch failed."""
+        self._captured(dev)
+
+    def _captured(self, dev):
+        """Stop this device's log capture and return what it read ("" when there was none)."""
+        proc, path = self._captures.pop(dev.id, (None, None))
+        if proc is None:
+            return None
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                return f.read()
+        finally:
+            os.unlink(path)
 
     def observe(self, dev, bundle_id, log):
         """After launch: (running, log path, crash line). iPhone: running only, no log."""
         time.sleep(log.seconds)
         if dev.kind != "simulator":
-            return self._device_running(dev, bundle_id), None, ""
+            running, names = self._device_running(dev, bundle_id)
+            text = self._captured(dev)
+            if not text or not names:           # no pymobiledevice3, or it read nothing
+                return running, None, ""
+            text = process_lines(text, names)
+            path = os.path.join(log.directory, _log_name(dev))
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            return running, path, _ios_crash_line(text)
         listed = self._run("simctl", "spawn", dev.id, "launchctl", "list").out
         running = f"UIKitApplication:{bundle_id}[" in listed
         info = self._run("simctl", "appinfo", dev.id, bundle_id).out
@@ -464,16 +548,25 @@ class Ios:
             os.unlink(path)
 
     def _device_running(self, dev, bundle_id):
-        """Physical iPhone: does any running process live inside this app's bundle?"""
+        """Physical iPhone: (does a running process live inside this app's bundle?, its process names).
+
+        Running is None when the phone could not be asked. The names are what
+        the device log calls the app: its running executables, and the bundle
+        folder's name for an app that has already exited.
+        """
         apps = self._json("device", "info", "apps", "--device", dev.id, "--bundle-id", bundle_id,
                           "--include-all-apps")
         procs = self._json("device", "info", "processes", "--device", dev.id)
         if not apps or not apps.get("apps") or procs is None:
-            return None
+            return None, set()
         folder = apps["apps"][0].get("url", "").rstrip("/")
         if not folder:
-            return None
-        return any(p.get("executable", "").startswith(folder + "/") for p in procs.get("runningProcesses", []))
+            return None, set()
+        inside = [p.get("executable", "") for p in procs.get("runningProcesses", [])
+                  if p.get("executable", "").startswith(folder + "/")]
+        names = {unquote(x.rsplit("/", 1)[-1]) for x in inside}
+        names.add(unquote(folder.rsplit("/", 1)[-1]).removesuffix(".app"))
+        return bool(inside), names
 
     def launch(self, dev, bundle_id, fallback="", url=""):
         """Start the app, restarting it if already running; with url, open it. fallback is unused on iOS."""
@@ -496,7 +589,12 @@ def _launch_and_watch(backend, dev, app_id, log, fallback="", shot=None, url="")
     """
     if log:
         backend.prepare_logs(dev)
-    backend.launch(dev, app_id, fallback, url)
+    try:
+        backend.launch(dev, app_id, fallback, url)
+    except (StepError, ToolError):
+        if log:
+            backend.discard_logs(dev)       # nothing was launched: stop reading the device's log
+        raise
     launched = time.monotonic()
     died, extra, notes = "", None, []
     if log:

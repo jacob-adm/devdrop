@@ -124,7 +124,10 @@ line found (an Android `FATAL EXCEPTION`, a Swift `Fatal error`, an
 uncaught Objective-C exception), and each device's log for that window
 is saved as `DIR/<device>.log` (Android: logcat main and crash buffers;
 iOS simulator: the app's process in the unified log). On a physical
-iPhone devdrop checks that the app is running but saves no log.
+iPhone devdrop checks that the app is running; it saves the app's lines
+of the device log, and finds the crash line, when the optional
+[pymobiledevice3](#optional-pymobiledevice3) tool is installed, and no
+log otherwise.
 
 ## Opening a link
 
@@ -147,14 +150,36 @@ With `--screenshot DIR`, `install --launch` and `launch` save what each
 device shows `--screenshot-seconds` (default 3) after the app starts, as
 `DIR/<device>.png`. With `--logs` as well, the picture is taken after the
 log window if that is longer. Android devices and emulators use
-`screencap`; iOS simulators use `simctl io`. A physical iPhone or iPad
-has no screenshot command in `devicectl`, so its result carries the
-warning `no screenshot: not available on a physical iPhone or iPad`.
+`screencap`; iOS simulators use `simctl io`. `devicectl` has no
+screenshot command for a physical iPhone or iPad: with the optional
+[pymobiledevice3](#optional-pymobiledevice3) tool installed its screen
+is saved like the others, and without it the result carries the warning
+`no screenshot: not available on a physical iPhone or iPad`.
 
 A screenshot that cannot be taken never changes a result: the device
 stays `ok` and the reason is in its warnings. The picture is taken even
 when `--logs` finds that the app has exited, so it shows what a user
 would see. Each `--json` record names its file in `screenshot`.
+
+## Optional: pymobiledevice3
+
+Apple's `devicectl` cannot read a physical iPhone's log or take its
+screenshot. [pymobiledevice3](https://github.com/doronz88/pymobiledevice3)
+can. It is not a dependency: when a `pymobiledevice3` command is on
+`PATH`, devdrop runs it for those two things on physical iPhones and
+iPads, and `doctor` says whether it was found. Without it nothing
+changes.
+
+- Install it apart from devdrop, for example `pipx install pymobiledevice3`.
+- Connect the iPhone by USB. This is the setup devdrop was tested with
+  (iOS 26); it needs no root and no extra pairing. Over the network
+  pymobiledevice3 wants its own pairing with the phone first
+  (`pymobiledevice3 remote pair`), which devdrop does not do for you.
+- `--logs`: the device's log is read from just before the launch until
+  the watch ends, and the lines written by the app's own process are
+  saved. Debug-level lines are left out.
+- A failure of the tool never changes a result: the screenshot becomes a
+  warning with the tool's message, and the log is left out.
 
 ## App Bundles (.aab)
 
