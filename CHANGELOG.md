@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-11-19
 
 - `install --watch` waits until a newly seen Android device has finished
   booting. adb lists a device as ready a few seconds before Android can
