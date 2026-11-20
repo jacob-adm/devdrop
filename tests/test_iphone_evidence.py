@@ -15,10 +15,12 @@ APPS = {"result": {"apps": [{"url": FOLDER + "/"}]}}
 RUNNING = {"result": {"runningProcesses": [{"executable": FOLDER + "/MyExec"}]}}
 GONE = {"result": {"runningProcesses": [{"executable": "file:///usr/libexec/other"}]}}
 # The device log as pymobiledevice3 prints it: the app under its executable's name, and others.
-SYSLOG = ("2026-11-20 16:50:33.940749 MyExec{libxpc.dylib}[12284] <NOTICE>: activating connection\n"
-          "2026-11-20 16:50:33.941000 audiomxd{AudioToolbox}[110] <NOTICE>: unrelated\n"
-          "2026-11-20 16:50:33.942000 My App[12284] <FAULT>: Fatal error: boom\n"
-          "2026-11-20 16:50:33.943000 MyExecHelper[7] <NOTICE>: a different process\n")
+CLEAN = ("2026-11-20 16:50:33.940749 MyExec{libxpc.dylib}[12284] <NOTICE>: activating connection\n"
+         "2026-11-20 16:50:33.941000 audiomxd{AudioToolbox}[110] <NOTICE>: unrelated\n"
+         "2026-11-20 16:50:33.943000 MyExecHelper[7] <NOTICE>: a different process\n")
+# A Swift fatalError as a physical iPhone logs it (iOS 26), under the bundle folder's name here.
+CRASH = "2026-11-20 16:50:33.942000 My App{libswiftCore.dylib}[12284] <NOTICE>: My/main.swift:5: Fatal error: boom\n"
+SYSLOG = CLEAN + CRASH
 
 
 def state_rules(procs):
@@ -52,8 +54,9 @@ class IphoneEvidence(unittest.TestCase):
                     "--log-seconds", "1", "--screenshot", self.shots, "--screenshot-seconds", "1", "--json")
         return json.loads(r.stdout)["results"][0]
 
-    TOOL = [{"match": ["syslog", "live", "--udid", IPHONE], "stdout": SYSLOG},
-            {"match": ["dvt", "screenshot", "--userspace"], "write_after": IPHONE, "file_hex": IMAGE}]
+    SHOT = {"match": ["dvt", "screenshot", "--userspace"], "write_after": IPHONE, "file_hex": IMAGE}
+    TOOL = [{"match": ["syslog", "live", "--udid", IPHONE], "stdout": CLEAN}, SHOT]
+    CRASHED = [{"match": ["syslog", "live", "--udid", IPHONE], "stdout": SYSLOG}, SHOT]
 
     def test_log_and_screenshot_are_saved_like_any_other_device(self):
         rec = self.launch(tool_rules=self.TOOL)
@@ -70,10 +73,16 @@ class IphoneEvidence(unittest.TestCase):
         self.assertTrue(all(IPHONE in c for c in tool), tool)   # always aimed at this device
 
     def test_a_crash_is_reported_with_its_cause_from_the_device_log(self):
-        rec = self.launch(procs=GONE, tool_rules=self.TOOL)
+        rec = self.launch(procs=GONE, tool_rules=self.CRASHED)
         self.assertEqual((rec["result"], rec["stage"], rec["reason"]),
                          ("failed", "running", "app exited within 1s: Fatal error: boom"))
         self.assertTrue(os.path.isfile(rec["log"]))
+
+    def test_a_crash_counts_even_when_ios_has_a_process_for_the_app_again(self):
+        # Seen on a physical iPhone: the process list names the app right after it crashed.
+        rec = self.launch(procs=RUNNING, tool_rules=self.CRASHED)
+        self.assertEqual((rec["result"], rec["stage"], rec["running"]), ("failed", "running", False))
+        self.assertEqual(rec["reason"], "app exited within 1s: Fatal error: boom")
 
     def test_without_the_tool_nothing_changes(self):
         rec = self.launch()
