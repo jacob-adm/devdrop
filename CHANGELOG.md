@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-20
 
 - `doctor` shows which Xcode `xcode-select` points at and the installed
   iOS simulator runtimes, with the command to download one when there
