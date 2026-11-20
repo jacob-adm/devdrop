@@ -48,22 +48,24 @@ per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
 
 ## Tested on
 
-- The unit suite, in CI on every pull request: Linux, macOS and Windows, with
-  Python 3.11 and 3.13. On Windows the stand-in tools are real `.exe` files,
-  as the Android SDK's are.
-- Android emulators (Google system images, arm64): API 23, 24, 29 (also
-  with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
-  API 35 and 37. That full set was last run with 0.1.1. The options added
-  in 0.2.0, `--screenshot` and `--url`, were run on API 23, 35 and 37.
-- iOS simulators: iOS 26.3, including `--screenshot` and `--url`. iOS 18.5
-  was last run with 0.1.0.
-- A physical iPhone on iOS 26: a development-signed build inspected
-  (its real provisioning profile), installed, launched with `--logs`
-  and `--junit`, and uninstalled, each checked on the phone with
-  devicectl (`tests/e2e/test_physical.py`). With 0.2.0, `launch --url`
-  was run by hand on iOS 26.6: the phone accepts the launch and the app
-  runs. The test app does not show the link it was given, so whether an
-  app receives it is not checked. `--screenshot` gives its warning there.
-- Not yet tested on physical Android phones, including vendor builds such
-  as Samsung One UI or Xiaomi HyperOS, whose install prompts and
-  restrictions differ from Google's images.
+Every row below passes. "End-to-end suite" means real test apps built for
+the run, installed with devdrop, and each result checked on the device
+itself with `adb`, `simctl` or `devicectl`.
+
+| What | Where | How |
+| --- | --- | --- |
+| Reading builds, device lists, selection, pre-install checks, reports, every command against stand-in tools | Linux, macOS and Windows; Python 3.11 and 3.13 | Unit suite, in CI on every pull request. On Windows the stand-in tools are real `.exe` files, as the Android SDK's are. |
+| Install, upgrade, downgrade, signing-key clash, launch, uninstall, launch logs and crash detection, App Bundles, boot and shutdown, `connect`, `--watch` | Android emulators (Google system images, arm64): API 23, 24, 29 (also with 1 GB of RAM), 34, 35, 36 and 37 | End-to-end suite |
+| 16 KB page-size readiness | 16 KB page-size images of API 35 and 37 | End-to-end suite |
+| Install, launch, uninstall, launch logs and crash detection, boot and shutdown | iOS simulators: iOS 18.5 and 26.3 | End-to-end suite |
+| `--screenshot` and `--url` | Android emulators API 23, 35 and 37; iOS simulator 26.3 | End-to-end suite: each record's PNG is read back; on Android the started activity shows the full link |
+| A development-signed build inspected (its real provisioning profile), installed, launched with `--logs` and `--junit`, uninstalled | A physical iPhone, iOS 26 | `tests/e2e/test_physical.py`, each step checked on the phone with `devicectl` |
+| `launch --url`, and the `--screenshot` warning | A physical iPhone, iOS 26 | By hand: the launch is accepted and the app runs |
+
+Not tested:
+
+- Physical Android phones, including vendor builds such as Samsung One UI
+  or Xiaomi HyperOS, whose install prompts and restrictions differ from
+  Google's images.
+- Whether an app on a physical iPhone or an iOS simulator receives the
+  link passed with `--url`: the test apps do not show it.
