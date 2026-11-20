@@ -20,7 +20,11 @@ from tests.fakes import FakeTools, adb_rules, fixture, xcrun_rules
 from tests.test_devices import devdrop
 from tests.test_install import adb_rules as lab_rules
 
-SLOW = {"DEVDROP_TOOL_TIMEOUT": "0.5"}
+# A short tool timeout for the tests that need one call to time out. The stand-in tools are
+# Python programs: 2 seconds leaves room for one to start on a busy machine, so that only the
+# rule that sleeps (STALL seconds) runs out of time.
+SLOW = {"DEVDROP_TOOL_TIMEOUT": "2"}
+STALL = 6
 
 
 class Tmp(unittest.TestCase):
@@ -322,7 +326,7 @@ class AndroidAdbEdges(unittest.TestCase):
 
     def test_getprop_timeout_marks_device_not_responding(self):
         rules = adb_rules()
-        rules.insert(1, {"match": ["-s", "37201FDH2000CK", "getprop"], "sleep": 3})
+        rules.insert(1, {"match": ["-s", "37201FDH2000CK", "getprop"], "sleep": STALL})
         self.fake.add("adb", rules)
         r = devdrop(self.fake, "devices", "--json", env_extra=SLOW)
         devs = {d["id"]: d for d in json.loads(r.stdout)["devices"]}
@@ -361,7 +365,7 @@ class AndroidAdbEdges(unittest.TestCase):
         self.assertEqual(recs["BBB222"]["reason"], "no launcher activity (is the app installed?)")
 
     def test_tool_timeout_during_install_and_launch(self):
-        self.fake.add("adb", lab_rules(extra=[{"match": ["-s", "AAA111", "resolve-activity"], "sleep": 3}]))
+        self.fake.add("adb", lab_rules(extra=[{"match": ["-s", "AAA111", "resolve-activity"], "sleep": STALL}]))
         r = devdrop(self.fake, "launch", "com.example.app", "--to", "AAA111", "--json", env_extra=SLOW)
         rec = json.loads(r.stdout)["results"][0]
         self.assertEqual((rec["result"], rec["stage"]), ("failed", "tool"))
@@ -406,7 +410,7 @@ class IosToolEdges(unittest.TestCase):
                 self.assertIn(want, error)
 
     def test_find_devicectl_timeout_counts_as_missing(self):
-        code, error = self.backend_error([{"match": ["--find"], "sleep": 3},
+        code, error = self.backend_error([{"match": ["--find"], "sleep": STALL},
                                           {"match": ["simctl"], "stdout": fixture("simctl_list.json")}], SLOW)
         self.assertIn("devicectl not found", error)
 
