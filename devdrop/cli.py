@@ -445,6 +445,9 @@ def cmd_install(args):
     if args.url and not args.launch:
         print("devdrop: --url needs --launch", file=sys.stderr)
         return USAGE
+    if args.dry_run and args.watch:
+        print("devdrop: --dry-run cannot be used with --watch", file=sys.stderr)
+        return USAGE
     log = _launch_log(args)
     shot = _launch_shot(args)
     # Only the build's platform is queried: an APK never waits on Xcode, an IPA never on adb.
@@ -470,7 +473,8 @@ def cmd_install(args):
                 return USAGE
         def work(dev):
             """Install on one device with this run's options."""
-            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot, args.url or "")
+            return deploy.install_one(backend, dev, report, args.clean, args.launch, log, shot, args.url or "",
+                                      args.dry_run)
         records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
         if args.watch:
             records += _watch(args, cfg, report["platform"], backend, {r["id"] for r in records}, work)
@@ -640,6 +644,8 @@ def build_parser():
     ins.add_argument("path")
     ins.add_argument("--launch", action="store_true", help="start the app after installing")
     ins.add_argument("--clean", action="store_true", help="uninstall the app first (removes its data)")
+    ins.add_argument("--dry-run", action="store_true",
+                     help="check the build against each device and report; install and launch nothing")
     _log_args(ins)
     ins.add_argument("--watch", action="store_true",
                      help="keep running: install on each matching device as it connects (Ctrl-C to stop)")

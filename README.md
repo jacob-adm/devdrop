@@ -68,7 +68,7 @@ developer, 7-day builds on a free account): see
 devdrop devices [--json] [--all]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
-devdrop install PATH [--to SEL] [--launch] [--clean] [--jobs N] [--json]
+devdrop install PATH [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
                 [--ks KEYSTORE --ks-alias ALIAS]      (.aab only)
                 [--logs DIR [--log-seconds N]] [--watch [--watch-timeout S]]
                 [--screenshot DIR [--screenshot-seconds N]] [--url URL]

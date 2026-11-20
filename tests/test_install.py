@@ -111,6 +111,34 @@ class InstallCommand(unittest.TestCase):
         self.assertEqual(sorted(c[1] for c in starts), ["AAA111", "BBB222"])
         self.assertIn("com.example.app/.MainActivity", starts[0])
 
+    def test_dry_run_reports_verdicts_and_sends_nothing(self):
+        self.adb()
+        r = devdrop(self.fake, "install", self.apk, "--dry-run", "--clean", "--launch", "--json")
+        self.assertEqual(r.returncode, 1, r.stderr)     # one device would be skipped
+        recs = {x["id"]: x for x in json.loads(r.stdout)["results"]}
+        for serial in ("AAA111", "BBB222"):
+            self.assertEqual((recs[serial]["result"], recs[serial]["stage"], recs[serial]["dry_run"]),
+                             ("ok", "preflight", True))
+            self.assertIn("nothing was sent", recs[serial]["reason"])
+        self.assertEqual((recs["CCC333"]["result"], recs["CCC333"]["reason"]),
+                         ("skipped", "API 23 < minSdk 26"))
+        self.assertNotIn("dry_run", recs["CCC333"])
+        sent = [c for c in self.fake.calls("adb") if {"install", "uninstall", "am", "resolve-activity"} & set(c)]
+        self.assertEqual(sent, [])
+
+    def test_dry_run_all_ok_exit_0_and_text(self):
+        self.adb()
+        r = devdrop(self.fake, "install", self.apk, "--dry-run", "--to", "api>=30")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("preflight: would install; nothing was sent (dry run)", r.stdout)
+        self.assertEqual(self.installs(), [])
+
+    def test_dry_run_with_watch_is_a_usage_error(self):
+        self.adb()
+        r = devdrop(self.fake, "install", self.apk, "--dry-run", "--watch")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--dry-run cannot be used with --watch", r.stderr)
+
     def test_text_output_and_all_ok_exit_0(self):
         self.adb()
         r = devdrop(self.fake, "install", self.apk, "--to", "api>=30")
