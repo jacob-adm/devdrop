@@ -139,6 +139,36 @@ def android_failure(text):
     return f"{code}: {ANDROID_FAILURES[code]}" if code in ANDROID_FAILURES else code
 
 
+# Android 9 and later: "signatures=PackageSignatures{4fe50fc version:4, signatures:[15f777a2],
+# past signatures:[1a2b3c flags: 17]}". Older versions print one number that is not the certificate's.
+_SIGNATURES = re.compile(r"signatures=PackageSignatures\{\w+ version:\d+, signatures:\[([^\]]*)\]"
+                         r"(?:, past signatures:\[([^\]]*)\])?")
+
+
+def parse_installed(text, package):
+    """versionCode and signing certificate ids of one package from `dumpsys package` output."""
+    state = {"version_code": None, "cert_ids": None}
+    start = text.find(f"Package [{package}]")       # absent when the app is not installed
+    if start < 0:
+        return state
+    block = text[start:]
+    m = re.search(r"\bversionCode=(\d+)", block)
+    if m:
+        state["version_code"] = int(m.group(1))
+    m = _SIGNATURES.search(block)
+    if m:
+        past = re.findall(r"([0-9a-f]+)(?= flags)", m.group(2) or "")
+        ids = [x.strip() for x in m.group(1).split(",") if x.strip()] + past
+        state["cert_ids"] = ids or None
+    return state
+
+
+def _data_free(text):
+    """Free space on /data in KB from `dumpsys diskstats` ("Data-Free: 8529084K / ..."), or None."""
+    m = re.search(r"^Data-Free: (\d+)K", text, re.M)
+    return int(m.group(1)) if m else None
+
+
 class Android:
     """Install, launch, uninstall and launch-watching for Android devices through adb."""
 
@@ -161,6 +191,19 @@ class Android:
             return self._adb(dev, "shell", "getprop", "sys.boot_completed").out.strip() == "1"
         except ToolError:
             return False
+
+    def installed(self, dev, package):
+        """What the device holds that can make it refuse a build, or None if it cannot be asked.
+
+        {"version_code": int or None, "cert_ids": [hex] or None, "free_kb": int or None};
+        version_code and cert_ids are None when the app is not installed.
+        """
+        try:
+            text = self._adb(dev, "shell", "dumpsys", "package", package).out
+            disk = self._adb(dev, "shell", "dumpsys", "diskstats").out
+        except ToolError:
+            return None
+        return parse_installed(text, package) | {"free_kb": _data_free(disk)}
 
     def install(self, dev, report):
         """Install an APK (or an .aab through bundletool); raise StepError with adb's reason."""
@@ -333,6 +376,10 @@ class Ios:
         """A ready iPhone or simulator takes installs at once; only Android has a gap after "ready"."""
         return True
 
+    def installed(self, dev, bundle_id):
+        """iOS replaces an installed copy whatever its version or signer: nothing to ask."""
+        return None
+
     def screenshot(self, dev, path):
         """Save a simulator's screen as a PNG. devicectl has no screenshot command for real devices."""
         if dev.kind != "simulator":
@@ -480,6 +527,9 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=
     """
     started = time.monotonic()
     reason = preflight.check(report, dev)
+    if reason:
+        return record(dev, "skipped", "preflight", reason, started)
+    reason = preflight.installed(report, dev, backend.installed(dev, report["id"]), clean)
     if reason:
         return record(dev, "skipped", "preflight", reason, started)
     notes = list(preflight.warnings(report, dev))

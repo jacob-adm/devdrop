@@ -2,6 +2,7 @@
 """Read what an APK, IPA or .app contains, with the standard library only."""
 
 import datetime
+import hashlib
 import os
 import plistlib
 import posixpath
@@ -166,7 +167,71 @@ def _page_16k(path, z):
     return {"native_64bit": bool(libs), "ready": all(x["ready"] for x in libs), "libraries": libs}
 
 
-def _android_report(kind, path, root, lib_names, page_16k, signing):
+SIGNATURE_IDS = (0x7109871a, 0xf05368c0, 0x1b93ad61)   # signing block entries: scheme v2, v3, v3.1
+
+
+def _prefixed(buf, at=0):
+    """The length-prefixed (uint32) value at `at`, and the offset after it."""
+    n = struct.unpack_from("<I", buf, at)[0]
+    if at + 4 + n > len(buf):
+        raise ValueError("length runs past the end")
+    return buf[at + 4:at + 4 + n], at + 4 + n
+
+
+def _sequence(buf):
+    """Every length-prefixed value in buf."""
+    out, at = [], 0
+    while at < len(buf):
+        value, at = _prefixed(buf, at)
+        out.append(value)
+    return out
+
+
+def signer_certs(path):
+    """The signing certificates (DER) in an APK's Signing Block (schemes v2 and v3), in file order.
+
+    An APK signed with a rotated key carries the old certificate in its v2
+    signature and the new one in v3: both are returned. Empty for an APK
+    with only a v1 (JAR) signature or a block that cannot be read.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        eocd = data.rfind(b"PK\x05\x06")
+        cd = struct.unpack_from("<I", data, eocd + 16)[0]
+        if eocd < 0 or cd < 32 or data[cd - 16:cd] != SIG_BLOCK_MAGIC:
+            return []
+        size = struct.unpack_from("<Q", data, cd - 24)[0]
+        block = data[cd - size:cd - 24]         # the id-value pairs between the two size fields
+        certs, at = [], 0
+        while at + 12 <= len(block):
+            length, ident = struct.unpack_from("<QI", block, at)
+            value = block[at + 12:at + 8 + length]
+            at += 8 + length
+            if ident not in SIGNATURE_IDS:
+                continue
+            for signer in _sequence(_prefixed(value)[0]):
+                signed = _prefixed(signer)[0]           # signed data: digests, then certificates
+                for cert in _sequence(_prefixed(signed, _prefixed(signed)[1])[0]):
+                    if cert not in certs:
+                        certs.append(cert)
+        return certs
+    except (OSError, ValueError, struct.error):
+        return []
+
+
+def android_cert_id(cert):
+    """A certificate as Android prints it in `dumpsys package` (signatures:[...]).
+
+    That is Java's Arrays.hashCode over the certificate bytes, in hex.
+    """
+    h = 1
+    for byte in cert:
+        h = (31 * h + (byte - 256 if byte > 127 else byte)) & 0xFFFFFFFF
+    return format(h, "x")
+
+
+def _android_report(kind, path, root, lib_names, page_16k, signing, certs=()):
     """The report shared by APKs and App Bundles, from the manifest's element tree."""
     if root.tag != "manifest":
         raise ArtifactError(f"{path}: AndroidManifest.xml root is <{root.tag}>, not <manifest>")
@@ -194,6 +259,9 @@ def _android_report(kind, path, root, lib_names, page_16k, signing):
         "launcher": launcher,
         "split": _text(root.attrs.get("split", "")),
         "signing": signing,
+        "certs": [hashlib.sha256(c).hexdigest() for c in certs],     # as apksigner prints them
+        "cert_ids": [android_cert_id(c) for c in certs],             # as the device prints them
+        "size": os.path.getsize(path),
         "page_16k": page_16k,
         "page_size_compat": _text(app.attrs.get("pageSizeCompat", "")) if app else "",
     }
@@ -213,7 +281,8 @@ def _apk(path):
             raise ArtifactError(f"{path}: no AndroidManifest.xml (not an APK)")
         root = axml.parse(z.read("AndroidManifest.xml"))
         page_16k = _page_16k(path, z)
-    return _android_report("apk", path, root, _libs(names, ""), page_16k, _apk_signing(path, names))
+    return _android_report("apk", path, root, _libs(names, ""), page_16k, _apk_signing(path, names),
+                           signer_certs(path))
 
 
 def _aab(path):

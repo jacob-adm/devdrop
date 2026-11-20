@@ -121,7 +121,20 @@ def launcher_alias(name, enabled):
         ])])
 
 
-def apk(path, manifest_bytes, libs=(), v1=False, v2=False):
+def _prefixed(data):
+    return struct.pack("<I", len(data)) + data
+
+
+def v2_signers(certs):
+    """The value of a scheme v2 signing block entry: one signer per certificate."""
+    signers = b""
+    for cert in certs:
+        signed = _prefixed(b"") + _prefixed(_prefixed(cert))       # no digests, one certificate
+        signers += _prefixed(_prefixed(signed) + _prefixed(b"") + _prefixed(b""))
+    return _prefixed(signers)
+
+
+def apk(path, manifest_bytes, libs=(), v1=False, v2=False, certs=()):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         z.writestr("AndroidManifest.xml", manifest_bytes)
@@ -136,7 +149,8 @@ def apk(path, manifest_bytes, libs=(), v1=False, v2=False):
         # Insert an APK Signing Block before the central directory and fix the offset.
         eocd = data.rfind(b"PK\x05\x06")
         cd = struct.unpack_from("<I", data, eocd + 16)[0]
-        block_body = struct.pack("<Q", 12) + struct.pack("<I", 0x7109871A) + b"\x00" * 8
+        value = v2_signers(certs) if certs else b"\x00" * 8
+        block_body = struct.pack("<Q", 4 + len(value)) + struct.pack("<I", 0x7109871A) + value
         block = struct.pack("<Q", len(block_body) + 24) + block_body + \
             struct.pack("<Q", len(block_body) + 24) + b"APK Sig Block 42"
         data = data[:cd] + block + data[cd:]
