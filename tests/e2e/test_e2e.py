@@ -464,6 +464,9 @@ class E_WirelessAndWatch(unittest.TestCase):
         name = next(n for n in S["avds"] if n != "devdrop_api23")
         devdrop("uninstall", PACKAGE, "--to", S["android"], "--json")
         devdrop("shutdown", "--to", name, "--json")
+        from devdrop.virtual import avd_home
+        # A cold boot: adb lists the emulator seconds before Android can take an install.
+        shutil.rmtree(os.path.join(avd_home(), f"{name}.avd", "snapshots", "default_boot"), ignore_errors=True)
         watcher = subprocess.Popen([S["devdrop"], "install", apk("app-v1"), "--to", name, "--watch",
                                     "--watch-timeout", "420", "--json"],
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

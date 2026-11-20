@@ -437,8 +437,8 @@ def cmd_install(args):
         return found
     chosen, backends = found
     backend = backends[report["platform"]]
-    # With --watch, devices not ready yet are picked up later instead of reported as skipped now.
-    chosen = [d for d in chosen if d.state == READY] if args.watch else chosen
+    # With --watch, devices not ready or still booting are picked up later instead of reported now.
+    chosen = [d for d in chosen if d.state == READY and backend.booted(d)] if args.watch else chosen
     with tempfile.TemporaryDirectory(prefix="devdrop-") as tmp:
         if report["type"] == "aab":
             try:
@@ -457,7 +457,7 @@ def cmd_install(args):
             return deploy.install_one(backend, dev, report, args.clean, args.launch, log)
         records = deploy.fan_out(chosen, work, args.jobs, None if args.json else _print_record)
         if args.watch:
-            records += _watch(args, cfg, report["platform"], {r["id"] for r in records}, work)
+            records += _watch(args, cfg, report["platform"], backend, {r["id"] for r in records}, work)
     if args.watch and not records:
         print("devdrop: no device appeared", file=sys.stderr)
         return NO_DEVICES
@@ -465,7 +465,7 @@ def cmd_install(args):
     return _summary([r for r in booted if r["result"] != "ok"] + records, args)
 
 
-def _watch(args, cfg, platform, handled, work):
+def _watch(args, cfg, platform, backend, handled, work):
     """Install on each matching device that becomes ready, once, until Ctrl-C or the timeout."""
     deadline = time.monotonic() + args.watch_timeout if args.watch_timeout else None
     if not args.json:
@@ -477,7 +477,9 @@ def _watch(args, cfg, platform, handled, work):
             devices, _ = inventory(platforms=(platform,))
             for d in devices:
                 d.name = _name(cfg, d)
-            new = [d for d in select(devices, args.to, cfg) if d.state == READY and d.id not in handled]
+            # A device still booting is left for a later scan, not installed on and not marked handled.
+            new = [d for d in select(devices, args.to, cfg)
+                   if d.state == READY and d.id not in handled and backend.booted(d)]
             if new:
                 handled.update(d.id for d in new)
                 records += deploy.fan_out(new, work, args.jobs, None if args.json else _print_record)
