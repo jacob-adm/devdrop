@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-11-20
 
 - `install --watch`: an install under way when Ctrl-C arrives now
   finishes and is in the summary. It used to complete on the device but
