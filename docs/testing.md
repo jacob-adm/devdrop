@@ -53,12 +53,17 @@ per-device report is written to `$DEVDROP_E2E_CACHE/e2e-report.json`.
   as the Android SDK's are.
 - Android emulators (Google system images, arm64): API 23, 24, 29 (also
   with 1 GB of RAM), 34, 35, 36 and 37, and 16 KB page-size images of
-  API 35 and 37.
-- iOS simulators: iOS 18.5 and 26.3.
+  API 35 and 37. That full set was last run with 0.1.1. The options added
+  in 0.2.0, `--screenshot` and `--url`, were run on API 23, 35 and 37.
+- iOS simulators: iOS 26.3, including `--screenshot` and `--url`. iOS 18.5
+  was last run with 0.1.0.
 - A physical iPhone on iOS 26: a development-signed build inspected
   (its real provisioning profile), installed, launched with `--logs`
   and `--junit`, and uninstalled, each checked on the phone with
-  devicectl (`tests/e2e/test_physical.py`).
+  devicectl (`tests/e2e/test_physical.py`). With 0.2.0, `launch --url`
+  was run by hand on iOS 26.6: the phone accepts the launch and the app
+  runs. The test app does not show the link it was given, so whether an
+  app receives it is not checked. `--screenshot` gives its warning there.
 - Not yet tested on physical Android phones, including vendor builds such
   as Samsung One UI or Xiaomi HyperOS, whose install prompts and
   restrictions differ from Google's images.
