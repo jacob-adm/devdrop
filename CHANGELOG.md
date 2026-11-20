@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-20
 
 - `install --dry-run`: checks the build against every selected device
   and reports which would take it and which would be skipped, without
