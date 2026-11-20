@@ -8,3 +8,5 @@ any CI dashboard shows which devices failed and why.
 
 devdrop exits 0 only when every selected device is `ok`; see
 [Exit codes](commands.md#exit-codes) for the rest.
+
+Every `--json` field is listed in [JSON output](json.md).
