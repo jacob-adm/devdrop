@@ -82,3 +82,6 @@ simulators and never touches physical devices.
 - Builds signed with a free Apple account stop working after 7 days.
 - A locked iPhone that already trusts the computer still installs and
   launches (seen on iOS 26).
+- `--logs` and `--screenshot` work on a physical iPhone only with the
+  optional pymobiledevice3 tool: see
+  [Commands](commands.md#optional-pymobiledevice3).

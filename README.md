@@ -26,6 +26,8 @@ python3 -m pip install .
   OS, then `PATH`.
 - iOS: macOS with Xcode. Physical devices need Xcode 15 or later
   (`devicectl`); simulators work with any Xcode that has `simctl`.
+  Optional: with `pymobiledevice3` on `PATH`, `--logs` and
+  `--screenshot` also work on physical iPhones.
 
 Either platform works without the other.
 
@@ -54,6 +56,8 @@ Either platform works without the other.
    device's and simulator's log is saved. On an iPhone it checks that
    the app is still running. Add `--screenshot DIR` and it saves what
    each Android device and simulator shows a few seconds after launch.
+   A physical iPhone's log and screenshot need the optional
+   pymobiledevice3 tool.
 6. **Read the result.** One line per device: `ok`, `skipped` or `failed`,
    with the reason. The exit code is 0 only when every device is `ok`.
    `--json` and `--junit FILE` give the same results to scripts and CI.

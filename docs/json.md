@@ -47,7 +47,7 @@ code is 0 only when every record is `ok`.
 | `artifact` | string | `install`: the path of the build this record is for |
 | `dry_run` | boolean | `install --dry-run`: true on devices that would take the build |
 | `running` | boolean or null | `--logs`: whether the app was still running after the watch; null when it could not be told |
-| `log` | string or null | `--logs`: the saved log file; null where no log is saved (a physical iPhone) |
+| `log` | string or null | `--logs`: the saved log file; null where no log is saved (a physical iPhone without pymobiledevice3) |
 | `screenshot` | string | `--screenshot`: the saved PNG, when one was taken |
 
 ## devices

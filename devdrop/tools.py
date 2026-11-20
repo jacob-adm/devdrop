@@ -80,6 +80,23 @@ def find_adb(env=None, home=None):
     return shutil.which("adb")
 
 
+def find_pymobiledevice3():
+    """Path to pymobiledevice3, an optional tool for a physical iPhone's log and screenshot. None if absent."""
+    return shutil.which("pymobiledevice3")
+
+
+def start(argv, out_path):
+    """Start a tool that keeps running, its output going to out_path. Returns the process.
+
+    Raises ToolError when the program is missing.
+    """
+    try:
+        with open(out_path, "wb") as out:
+            return subprocess.Popen(argv, stdout=out, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+    except OSError as e:
+        raise ToolError(f"{argv[0]}: {e.strerror or e}")
+
+
 def find_xcrun():
     """Path to xcrun (Xcode command line tools). None if absent."""
     return shutil.which("xcrun")

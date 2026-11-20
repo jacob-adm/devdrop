@@ -15,7 +15,7 @@ import zipfile
 from devdrop import __version__, android, artifact, bundle, config, deploy, ios, junit, preflight, virtual
 from devdrop.select import SelectorError, select
 from devdrop.device import READY
-from devdrop.tools import ToolError, find_adb, find_xcrun, run
+from devdrop.tools import ToolError, find_adb, find_pymobiledevice3, find_xcrun, run
 
 # Exit codes (documented in docs/commands.md). PARTIAL: some device was skipped or failed.
 OK, PARTIAL, USAGE, NO_DEVICES, NO_TOOLS = 0, 1, 2, 3, 4
@@ -190,6 +190,10 @@ def cmd_doctor(args):
         has = ios.has_devicectl(xcrun)
         line(has, "devicectl found" if has else "devicectl not found: needs Xcode 15 or later")
         problems += not has
+        pmd3 = find_pymobiledevice3()
+        # Optional: its absence is not a fault.
+        line(True, f"pymobiledevice3 {pmd3}: logs and screenshots on physical iPhones" if pmd3 else
+             "pymobiledevice3 not found (optional): no log or screenshot from a physical iPhone")
         runtimes = ios.simulator_runtimes(xcrun)
         # No runtime is not a fault (physical iPhones need none): say how to get one.
         if runtimes is not None:
@@ -333,7 +337,9 @@ def _targets(args, cfg, platforms, allow_empty=False):
 
 def _backend(platform, tool, bundle_setup=None):
     """The deploy backend for a platform, bound to its tool path."""
-    return deploy.Android(tool, bundle_setup) if platform == "android" else deploy.Ios(tool)
+    if platform == "android":
+        return deploy.Android(tool, bundle_setup)
+    return deploy.Ios(tool, find_pymobiledevice3())
 
 
 def _boot_one(adb, xcrun, dev, timeout, show):

@@ -19,6 +19,11 @@
 - New page, `docs/json.md`: every `--json` field of every command, what
   stays stable between releases, and a short sequence for scripts and
   coding agents. A test keeps the page and the output in step.
+- `--logs` and `--screenshot` on a physical iPhone or iPad, when the
+  optional `pymobiledevice3` tool is on `PATH`: the app's lines of the
+  device log are saved and checked for a crash, and the screen is saved
+  as a PNG. Without the tool nothing changes. `doctor` says whether it
+  was found.
 
 ## 0.2.0 - 2026-11-20
 
