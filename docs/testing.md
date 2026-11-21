@@ -57,6 +57,7 @@ itself with `adb`, `simctl` or `devicectl`.
 | Reading builds, device lists, selection, pre-install checks, reports, every command against stand-in tools | Linux, macOS and Windows; Python 3.11 and 3.13 | Unit suite, in CI on every pull request. On Windows the stand-in tools are real `.exe` files, as the Android SDK's are. |
 | Install, upgrade, downgrade, signing-key clash, launch, uninstall, launch logs and crash detection, App Bundles, boot and shutdown, `connect`, `--watch` | Android emulators (Google system images, arm64): API 23, 24, 29 (also with 1 GB of RAM), 34, 35, 36 and 37 | End-to-end suite |
 | Refusals predicted before sending: a downgrade, and a different signing key on API 35 and 37 | Android emulators API 23, 35 and 37 | End-to-end suite: after devdrop skips the device, the same APK is given to `adb install` directly and the device must refuse it |
+| The signing-key check with a rotated key (`apksigner rotate`): the rotated build, a build with only the new key, one with only the old key (with and without rollback allowed), and an unrelated key | Android emulator API 35 | By hand: for each build devdrop's verdict in a dry run equals what `adb install` then answers |
 | The signing-key check on Android 9 to 14 | Android emulators (AOSP system images, arm64): API 28, 29, 30, 31, 32, 33 and 34 | By hand on each: the installed certificate as `dumpsys package` prints it equals `cert_ids` from `inspect`, and `adb install` refuses the same app signed with another key |
 | 16 KB page-size readiness | 16 KB page-size images of API 35 and 37 | End-to-end suite |
 | Install, launch, uninstall, launch logs and crash detection, boot and shutdown | iOS simulators: iOS 18.5 and 26.3 | End-to-end suite |
@@ -83,9 +84,6 @@ Not tested:
 - Tablets and iPads. The iPad-only check is covered by the unit suite.
 - Real `adb` on Windows or Linux. There the unit suite runs against
   stand-in tools; no device or emulator was driven from either system.
-- An APK signed with a rotated key. That such a build passes the
-  signing-key check when one certificate matches is covered by the unit
-  suite, with a constructed signature.
 - Xcode versions before 26. `devicectl` came with Xcode 15, the stated
   minimum, but only Xcode 26 was used.
 - Ctrl-C during `--watch` with a real device: the unit suite sends it to

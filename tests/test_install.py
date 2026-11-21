@@ -128,8 +128,10 @@ class InstalledState(unittest.TestCase):
         parse = deploy.parse_installed
         self.assertEqual(parse(DUMPSYS_35.format(code=7, ids="15f777a2", past=""), "com.example.app"),
                          {"version_code": 7, "cert_ids": ["15f777a2"]})
-        self.assertEqual(parse(DUMPSYS_35.format(code=7, ids="aa, bb", past="cc flags: 17, dd flags: 1"),
-                               "com.example.app")["cert_ids"], ["aa", "bb", "cc", "dd"])
+        # Past certificates as a device prints them after a key rotation: only one whose flags
+        # (hex) grant rollback is accepted again. 1f does, 17 and 1 do not.
+        self.assertEqual(parse(DUMPSYS_35.format(code=7, ids="aa, bb", past="cc flags: 1f, dd flags: 17, ee flags: 1"),
+                               "com.example.app")["cert_ids"], ["aa", "bb", "cc"])
         self.assertEqual(parse(DUMPSYS_23.format(code=3), "com.example.app"),
                          {"version_code": 3, "cert_ids": None})
         for text in ("Unable to find package: com.example.app\n", "", DUMPSYS_35.format(code=1, ids="aa", past="")

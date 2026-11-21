@@ -143,6 +143,9 @@ def android_failure(text):
 
 # Android 9 and later: "signatures=PackageSignatures{4fe50fc version:4, signatures:[15f777a2],
 # past signatures:[1a2b3c flags: 17]}". Older versions print one number that is not the certificate's.
+# A past certificate (the key before a rotation) is only accepted again when its flags, in
+# hex, include ROLLBACK: seen on a device as "flags: 1f" (accepted) against "flags: 17" (refused).
+ROLLBACK = 0x8
 _SIGNATURES = re.compile(r"signatures=PackageSignatures\{\w+ version:\d+, signatures:\[([^\]]*)\]"
                          r"(?:, past signatures:\[([^\]]*)\])?")
 
@@ -159,7 +162,8 @@ def parse_installed(text, package):
         state["version_code"] = int(m.group(1))
     m = _SIGNATURES.search(block)
     if m:
-        past = re.findall(r"([0-9a-f]+)(?= flags)", m.group(2) or "")
+        past = [cert for cert, flags in re.findall(r"([0-9a-f]+) flags: ([0-9a-f]+)", m.group(2) or "")
+                if int(flags, 16) & ROLLBACK]
         ids = [x.strip() for x in m.group(1).split(",") if x.strip()] + past
         state["cert_ids"] = ids or None
     return state
