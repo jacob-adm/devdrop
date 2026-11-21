@@ -76,9 +76,10 @@ skips it when Android is certain to refuse the build:
 - the installed copy has a newer `versionCode` (a downgrade);
 - the installed copy is signed with a different key. This is checked for
   an APK on Android 9 and later, where the device reports the installed
-  certificate; an APK signed with a rotated key passes when either of
-  its certificates matches. Older Android versions and App Bundles are
-  not checked;
+  certificate. After a key rotation the device also lists the earlier
+  certificate: an APK signed with the rotated key passes, and one
+  signed only with the earlier key passes when the rotation allows
+  rollback. Older Android versions and App Bundles are not checked;
 - the device has less free storage than the APK's own size.
 
 The first two do not apply with `--clean`, which removes the installed

@@ -9,6 +9,10 @@
   times; "Not tested" in `docs/testing.md` now lists tablets and iPads,
   `pair`, real `adb` on Windows and Linux, rotated signing keys, vendor
   Android builds and older Xcode versions.
+- The signing-key check follows key rotation as the device does: an APK
+  signed only with the key from before a rotation is skipped unless the
+  rotation allows rollback. It was reported as installable, and the
+  device then refused it.
 
 ## 0.3.2 - 2026-11-20
 
