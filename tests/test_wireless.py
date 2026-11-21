@@ -227,7 +227,7 @@ class Watch(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "no Ctrl-C to send to a child process on Windows")
     def test_a_second_ctrl_c_exits_130_without_a_summary(self):
-        slow = {"match": ["-s", "AAA111", "install"], "sleep": 3, "stdout": "Performing Streamed Install\nSuccess\n"}
+        slow = {"match": ["-s", "AAA111", "install"], "sleep": 30, "stdout": "Performing Streamed Install\nSuccess\n"}
         self.fake.add("adb", [slow] + self.rules)
         env = self.fake.env()
         env["PYTHONPATH"] = REPO
@@ -242,7 +242,10 @@ class Watch(unittest.TestCase):
             time.sleep(0.5)
         finally:
             p.send_signal(signal.SIGINT)
+            stopped = time.monotonic()
             out, err = p.communicate(timeout=60)
+        # At once: the 30-second install under way is ended, not waited for.
+        self.assertLess(time.monotonic() - stopped, 3, err)
         self.assertEqual((p.returncode, out), (130, ""), err)
 
     def calls(self):

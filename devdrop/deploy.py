@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import stat
+import sys
 import subprocess
 import tempfile
 import time
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 
 from devdrop import bundle, preflight
+from devdrop import tools
 from devdrop.tools import ToolError, run, start
 
 INSTALL_TIMEOUT = 600  # seconds for one install; large apps over Wi-Fi take minutes
@@ -714,6 +716,17 @@ def fan_out(devices, work, jobs=None, on_done=None):
         except KeyboardInterrupt:
             for f in futures:
                 f.cancel()              # only takes effect on devices not started yet
-            collect(wait(futures).done)
+            try:
+                collect(wait(futures).done)
+            except KeyboardInterrupt:
+                # A second Ctrl-C: end the tools under way and exit now, without a summary.
+                # A normal exit would wait for every worker thread, so this one does not.
+                tools.stop_all()
+                for stream in (sys.stdout, sys.stderr):
+                    try:
+                        stream.flush()
+                    except (OSError, ValueError):
+                        pass
+                os._exit(130)
             raise Interrupted([results[i] for i in sorted(results)]) from None
     return [results[i] for i in range(len(devices))]

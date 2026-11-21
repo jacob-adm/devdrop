@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A second Ctrl-C during an install stops at once, as the 0.3.1 notes
+  first said: devdrop ends the `adb` and `xcrun` calls under way and
+  exits with code 130. Since 0.3.1 it waited for them to return.
+
 ## 0.3.3 - 2026-11-20
 
 - Docs corrected to what was tested. A second Ctrl-C during `--watch`
