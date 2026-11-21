@@ -50,7 +50,9 @@ left until it reports `sys.boot_completed`.
 Ctrl-C, or `--watch-timeout SECONDS`, ends the run with the usual
 summary and exit code. Installs under way when Ctrl-C arrives are
 allowed to finish and are part of the summary; no further device is
-started. A second Ctrl-C stops at once.
+started. A second Ctrl-C drops the summary: devdrop exits with code 130
+as soon as the installs under way have returned, which can still take
+as long as they do.
 
 ## Emulators and simulators
 

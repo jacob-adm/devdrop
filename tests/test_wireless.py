@@ -225,6 +225,26 @@ class Watch(unittest.TestCase):
         self.assertEqual([(r["id"], r["result"]) for r in json.loads(out)["results"]], [("AAA111", "ok")], err)
         self.assertEqual(p.returncode, 0, err)
 
+    @unittest.skipIf(os.name == "nt", "no Ctrl-C to send to a child process on Windows")
+    def test_a_second_ctrl_c_exits_130_without_a_summary(self):
+        slow = {"match": ["-s", "AAA111", "install"], "sleep": 3, "stdout": "Performing Streamed Install\nSuccess\n"}
+        self.fake.add("adb", [slow] + self.rules)
+        env = self.fake.env()
+        env["PYTHONPATH"] = REPO
+        p = subprocess.Popen([sys.executable, "-m", "devdrop", "install", self.apk, "--watch", "--json"],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env, cwd=self.fake.root)
+        try:
+            deadline = time.monotonic() + 50
+            while not any("install" in c for c in self.calls()):
+                self.assertLess(time.monotonic(), deadline, "no install on AAA111")
+                time.sleep(0.1)
+            p.send_signal(signal.SIGINT)
+            time.sleep(0.5)
+        finally:
+            p.send_signal(signal.SIGINT)
+            out, err = p.communicate(timeout=60)
+        self.assertEqual((p.returncode, out), (130, ""), err)
+
     def calls(self):
         try:
             return self.fake.calls("adb")
