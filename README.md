@@ -8,7 +8,10 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: 0.3.2. Not yet on PyPI.
+Status: 0.3.2. Not yet on PyPI. Tested on Android emulators, iOS
+simulators and one physical iPhone; not yet on physical Android phones,
+tablets or iPads. [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md)
+lists what was run where, and what was not.
 
 ## Install
 
@@ -48,8 +51,10 @@ Either platform works without the other.
    build sent to an iPhone, a provisioning profile that doesn't list
    that iPhone, and so on. Nothing is sent to them.
 4. **The rest install at the same time.** The run takes about as long as
-   the slowest device. With a small test app: under a second on an
-   emulator, about a second on an iPhone, a few seconds on a simulator.
+   the slowest device. Measured with test apps of about 100 KB, three
+   runs each: 0.2 to 0.9 s on an Android emulator, 1.0 to 3.6 s on an
+   iPhone over USB, and 0.3 s on an iOS simulator (7 s for the first
+   install after the simulator boots). A real app takes longer.
 5. **Optionally, launch.** `--launch` opens the app on each device. Add
    `--logs DIR` and devdrop watches each app for 5 seconds: an app that
    crashed is marked failed with the crash's cause, and each Android

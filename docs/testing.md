@@ -76,6 +76,19 @@ Not tested:
   the installed certificate, so the check is off there.
 - Physical Android phones, including vendor builds such as Samsung One UI
   or Xiaomi HyperOS, whose install prompts and restrictions differ from
-  Google's images.
+  Google's images. With them: `pair` (it needs a phone that shows a
+  pairing code), a phone attached by USB and Wi-Fi at once, and the
+  signing-key check on a vendor build, which was run on Google's
+  emulator images only.
+- Tablets and iPads. The iPad-only check is covered by the unit suite.
+- Real `adb` on Windows or Linux. There the unit suite runs against
+  stand-in tools; no device or emulator was driven from either system.
+- An APK signed with a rotated key. That such a build passes the
+  signing-key check when one certificate matches is covered by the unit
+  suite, with a constructed signature.
+- Xcode versions before 26. `devicectl` came with Xcode 15, the stated
+  minimum, but only Xcode 26 was used.
+- Ctrl-C during `--watch` with a real device: the unit suite sends it to
+  devdrop alone, while a terminal also sends it to `adb`.
 - Whether an app on a physical iPhone or an iOS simulator receives the
   link passed with `--url`: the test apps do not show it.

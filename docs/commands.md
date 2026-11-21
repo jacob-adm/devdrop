@@ -46,8 +46,10 @@ names the command that downloads one, `xcodebuild -downloadPlatform iOS`.
 - APK native code and 16 KB memory pages: for each 64-bit library,
   whether every ELF LOAD segment is 16 KB aligned and, if it is stored
   uncompressed, whether it starts on a 16 KB boundary in the APK.
-  Newer Android hardware uses 16 KB pages, and Google Play requires apps
-  targeting Android 15 or later to support them.
+  Newer Android hardware uses 16 KB pages, and Google Play has a 16 KB
+  requirement for apps that target Android 15 or later; Google's
+  [16 KB page sizes](https://developer.android.com/guide/practices/page-sizes)
+  page has the current rules and dates.
 - IPA or .app: bundle id, version and build, minimum iOS version, device
   families, whether it is built for devices or the simulator, and the
   embedded provisioning profile: type, team, the device UDIDs it allows
