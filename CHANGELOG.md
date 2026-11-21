@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 - 2026-11-20
 
 - Docs corrected to what was tested. A second Ctrl-C during `--watch`
   does not stop at once, as the 0.3.1 notes said: devdrop exits with
