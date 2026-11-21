@@ -8,7 +8,7 @@ phones, tablets and emulators, and `xcrun devicectl` / `xcrun simctl` for
 iPhones, iPads and iOS simulators. It is a single Python package with no
 dependencies.
 
-Status: 0.3.3. Not yet on PyPI. Tested on Android emulators, iOS
+Status: 0.3.4. Not yet on PyPI. Tested on Android emulators, iOS
 simulators and one physical iPhone; not yet on physical Android phones,
 tablets or iPads. [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md)
 lists what was run where, and what was not.
