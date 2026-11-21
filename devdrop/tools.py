@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 
 DEFAULT_TIMEOUT = 30  # seconds for one adb/xcrun call; installs and boots pass their own
@@ -20,6 +21,10 @@ def default_timeout(env=None):
         return DEFAULT_TIMEOUT          # not a number: fall back, never crash
     # Reject nan, inf, zero and negatives: each would mean "never" or "instantly".
     return value if math.isfinite(value) and value > 0 else DEFAULT_TIMEOUT
+
+
+_LIVE = set()                   # tool processes running now, so a second Ctrl-C can end them
+_LIVE_LOCK = threading.Lock()
 
 
 class ToolError(Exception):
@@ -44,13 +49,41 @@ def run(argv, timeout=None):
     timeout = default_timeout() if timeout is None else timeout
     try:
         # errors="replace": device output is not always valid UTF-8; a bad byte must not crash a run.
-        p = subprocess.run(argv, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=timeout)
+        p = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise ToolError(f"{argv[0]}: not found")
+    with _LIVE_LOCK:
+        _LIVE.add(p)
+    try:
+        out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
         raise ToolError(f"{' '.join(argv[:2])}: no answer after {timeout}s")
-    return Result(p.returncode, p.stdout, p.stderr)
+    except BaseException:
+        p.kill()                        # Ctrl-C in this thread: leave no tool running
+        p.wait()
+        raise
+    finally:
+        with _LIVE_LOCK:
+            _LIVE.discard(p)
+    return Result(p.returncode, out, err)
+
+
+def stop_all():
+    """End every tool process devdrop started that is still running.
+
+    Called on a second Ctrl-C, so devdrop can exit at once instead of
+    waiting for installs and log readers under way.
+    """
+    with _LIVE_LOCK:
+        procs = list(_LIVE)
+    for p in procs:
+        try:
+            p.kill()
+        except OSError:
+            pass                        # already gone
 
 
 def sdk_roots(env=None, home=None, system=None):
@@ -92,7 +125,10 @@ def start(argv, out_path):
     """
     try:
         with open(out_path, "wb") as out:
-            return subprocess.Popen(argv, stdout=out, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+            p = subprocess.Popen(argv, stdout=out, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+        with _LIVE_LOCK:
+            _LIVE.add(p)            # ended by stop_all too; killing an ended process is harmless
+        return p
     except OSError as e:
         raise ToolError(f"{argv[0]}: {e.strerror or e}")
 
