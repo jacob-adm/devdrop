@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The signing-key check before an install now covers Android 9 and
+  later (it was Android 15 and later).
+
 ## 0.3.1 - 2026-11-20
 
 - `install --watch`: an install under way when Ctrl-C arrives now

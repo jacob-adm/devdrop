@@ -285,7 +285,7 @@ class B_Android(unittest.TestCase):
         for rec in out["results"]:
             with self.subTest(serial=rec["id"], api=rec["api"]):
                 self.assertIn("signed with a different key; use --clean", rec["reason"])
-                if rec["api"] >= 35:
+                if rec["api"] >= 28:
                     # Predicted from the installed certificate; the device must agree.
                     self.assertEqual((rec["result"], rec["stage"]), ("skipped", "preflight"))
                     self.assertIn("INSTALL_FAILED_UPDATE_INCOMPATIBLE",
