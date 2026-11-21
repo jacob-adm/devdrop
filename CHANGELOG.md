@@ -1,14 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 - 2026-11-20
 
 - Docs corrected to what was tested. A second Ctrl-C during `--watch`
   does not stop at once, as the 0.3.1 notes said: devdrop exits with
   code 130 once the installs under way have returned. The README names
   what devdrop has and has not been run on and gives measured install
   times; "Not tested" in `docs/testing.md` now lists tablets and iPads,
-  `pair`, real `adb` on Windows and Linux, rotated signing keys, vendor
-  Android builds and older Xcode versions.
+  `pair`, real `adb` on Windows and Linux, vendor Android builds and
+  older Xcode versions.
 - The signing-key check follows key rotation as the device does: an APK
   signed only with the key from before a rotation is skipped unless the
   rotation allows rollback. It was reported as installable, and the
