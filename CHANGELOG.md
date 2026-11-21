@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 - 2026-11-20
 
 - The signing-key check before an install now covers Android 9 and
   later (it was Android 15 and later).
