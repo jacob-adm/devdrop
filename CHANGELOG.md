@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 - 2026-11-21
 
 - A second Ctrl-C during an install stops at once, as the 0.3.1 notes
   first said: devdrop ends the `adb` and `xcrun` calls under way and
