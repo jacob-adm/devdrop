@@ -7,8 +7,8 @@
   code 130 once the installs under way have returned. The README names
   what devdrop has and has not been run on and gives measured install
   times; "Not tested" in `docs/testing.md` now lists tablets and iPads,
-  `pair`, real `adb` on Windows and Linux, rotated signing keys, vendor
-  Android builds and older Xcode versions.
+  `pair`, real `adb` on Windows and Linux, vendor Android builds and
+  older Xcode versions.
 - The signing-key check follows key rotation as the device does: an APK
   signed only with the key from before a rotation is skipped unless the
   rotation allows rollback. It was reported as installable, and the
