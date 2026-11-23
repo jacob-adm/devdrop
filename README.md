@@ -13,14 +13,6 @@ simulators and one physical iPhone; not yet on physical Android phones,
 tablets or iPads. [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md)
 lists what was run where, and what was not.
 
-## Install
-
-From a clone of this repository:
-
-```
-python3 -m pip install .
-```
-
 ## Requirements
 
 - Python 3.11 or later
@@ -33,6 +25,14 @@ python3 -m pip install .
   `--screenshot` also work on physical iPhones.
 
 Either platform works without the other.
+
+## Install
+
+From a clone of this repository:
+
+```
+python3 -m pip install .
+```
 
 ## How it works
 
