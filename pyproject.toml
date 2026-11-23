@@ -22,6 +22,12 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 
+[project.urls]
+Homepage = "https://github.com/jacob-adm/devdrop"
+Documentation = "https://github.com/jacob-adm/devdrop/tree/main/docs"
+Source = "https://github.com/jacob-adm/devdrop"
+Issues = "https://github.com/jacob-adm/devdrop/issues"
+
 [project.scripts]
 devdrop = "devdrop.cli:main"
 
