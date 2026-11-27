@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-11-27
 
 - Android installs are confirmed: after adb reports success, devdrop
   reads back what the device holds and fails the device at the new stage
