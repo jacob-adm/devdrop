@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import zipfile
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -89,7 +90,18 @@ class FakeTools:
         os.makedirs(self.bin)
 
     def close(self):
-        self._tmp.cleanup()
+        # Windows refuses to delete a running .exe. A test that ends devdrop with
+        # terminate() can leave one stand-in call still finishing (and still writing
+        # its call log), so wait for it.
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                self._tmp.cleanup()
+                return
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.2)
 
     def add(self, name, rules, directory=None):
         directory = directory or self.bin
