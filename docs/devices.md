@@ -42,6 +42,14 @@ connect` finds paired phones on the network (mDNS) and connects to them;
 `devdrop connect HOST:PORT` connects to one address. A phone attached by
 both USB and Wi-Fi is listed and installed to once, over USB.
 
+An iPhone or iPad has no pairing command in devdrop. Pair it with Xcode
+once over USB (Window > Devices and Simulators); after that, with the Mac
+and the device on the same network, `xcrun devicectl` can reach it
+without the cable, and devdrop lists and installs to it like a wired
+one. In `devdrop devices --json` its `transport` is `wifi` (from devicectl's
+`localNetwork`), or `usb` when it is plugged in. iPhones and iPads over
+Wi-Fi have not yet been tested on hardware.
+
 `install --watch` keeps running after the first pass: every device that
 matches `--to` and becomes ready later (plugged in, booted, connected
 over Wi-Fi) gets the build once, and its result prints as it finishes.

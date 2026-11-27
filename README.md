@@ -50,7 +50,8 @@ python3 -m pip install .
 ## How it works
 
 1. **Attach devices.** Plug in phones and tablets over USB, or connect
-   Android ones over Wi-Fi (`devdrop pair`, `devdrop connect`). Start
+   Android ones over Wi-Fi (`devdrop pair`, `devdrop connect`) and
+   iPhones and iPads through Xcode's network pairing. Start
    emulators and simulators yourself, or let devdrop start them with
    `--boot`. The first time, an Android phone asks to allow USB debugging
    and an iPhone needs Developer Mode on and to trust the computer.
