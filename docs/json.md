@@ -35,7 +35,7 @@ code is 0 only when every record is `ok`.
 | `api` | number or null | Android API level; null on iOS |
 | `page_size` | number or null | Android memory page size in bytes, where the device reports it |
 | `result` | string | `ok`, `skipped` or `failed` |
-| `stage` | string | the step the result is about: `preflight`, `build-apks`, `install`, `uninstall`, `launch`, `running`, `boot`, `shutdown` or `tool` |
+| `stage` | string | the step the result is about: `preflight`, `build-apks`, `install`, `verify`, `uninstall`, `launch`, `running`, `boot`, `shutdown` or `tool` |
 | `reason` | string | why the device was skipped or failed; empty for most `ok` results |
 | `warnings` | list of strings | things that did not change the result |
 | `seconds` | number | time spent on this device |
@@ -46,6 +46,7 @@ code is 0 only when every record is `ok`.
 | --- | --- | --- |
 | `artifact` | string | `install`: the path of the build this record is for |
 | `dry_run` | boolean | `install --dry-run`: true on devices that would take the build |
+| `installed` | object | `install` on Android: what the device listed once adb reported success, `{"version_code": number or null, "cert_ids": list of strings or null}` |
 | `running` | boolean or null | `--logs`: whether the app was still running after the watch; null when it could not be told |
 | `log` | string or null | `--logs`: the saved log file; null where no log is saved (a physical iPhone without pymobiledevice3) |
 | `screenshot` | string | `--screenshot`: the saved PNG, when one was taken |

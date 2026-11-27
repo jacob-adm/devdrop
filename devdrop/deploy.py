@@ -267,6 +267,34 @@ class Android:
         running = bool(pids) and all(p.isdigit() for p in pids) and not crashed
         return running, path, reason
 
+    def confirm(self, dev, report):
+        """After adb says Success: read back what the device holds. Returns (held, note).
+
+        held is {"version_code", "cert_ids"} as the device lists the app, or None
+        when it could not be read (note then says so). A copy that is not this
+        build (another versionCode, or a key the build is not signed with) raises
+        StepError at stage "verify".
+        """
+        package = report["id"]
+        try:
+            r = self._adb(dev, "shell", "dumpsys", "package", package)
+        except ToolError:
+            r = None
+        if r is not None and r.rc == 0 and f"Unable to find package: {package}" in r.out:
+            raise StepError("verify", "the app is not on the device after the install")
+        if r is None or r.rc != 0 or f"Package [{package}]" not in r.out:
+            return None, "install not confirmed: the device did not list the app afterwards"
+        held = parse_installed(r.out, package)
+        have, new = held["version_code"], str(report.get("build", ""))
+        if have is not None and new.isdigit() and have != int(new):
+            raise StepError("verify", f"the device holds versionCode {have}, the build is {new}")
+        theirs, ours = held["cert_ids"], report.get("cert_ids")
+        # Same rule as the preflight: only an .apk carries its key, only Android 9+ names it.
+        if report.get("type") == "apk" and theirs and ours and \
+                (dev.api or 0) >= preflight.SIGNATURE_API and not set(theirs) & set(ours):
+            raise StepError("verify", "the device holds a copy signed with a different key")
+        return held, ""
+
     def uninstall(self, dev, package, missing_ok=False):
         """Remove the app and its data. missing_ok: an absent app is not an error (--clean)."""
         r = self._adb(dev, "uninstall", package)
@@ -418,6 +446,10 @@ class Ios:
     def installed(self, dev, bundle_id):
         """iOS replaces an installed copy whatever its version or signer: nothing to ask."""
         return None
+
+    def confirm(self, dev, report):
+        """Reading the installed version back is Android only for now: nothing judged."""
+        return None, ""
 
     def screenshot(self, dev, path):
         """Save the screen as a PNG: simctl for a simulator, pymobiledevice3 (if present) for a device."""
@@ -647,9 +679,15 @@ def install_one(backend, dev, report, clean=False, launch=False, log=None, shot=
         if clean:
             backend.uninstall(dev, report["id"], missing_ok=True)
         backend.install(dev, report)
+        held, note = backend.confirm(dev, report)
+        if held:
+            extra = {"installed": held}
+        if note:
+            notes.append(note)
         if launch:
-            died, extra, more = _launch_and_watch(backend, dev, report["id"], log,
-                                                  report.get("launcher", ""), shot, url)
+            died, watched, more = _launch_and_watch(backend, dev, report["id"], log,
+                                                    report.get("launcher", ""), shot, url)
+            extra = (extra or {}) | (watched or {})
             notes += more
             if died:
                 return record(dev, "failed", "running", died, started, notes, extra)

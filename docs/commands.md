@@ -90,6 +90,15 @@ Android says to use `--clean`).
 `--clean` uninstalls the app first, which also removes its data;
 `--launch` starts it afterwards.
 
+On Android, devdrop does not take adb's `Success` on trust: it then asks
+the device what it holds and fails the device at stage `verify` when the
+device says it has no such package, lists a different `versionCode` than
+the build's, or (for an APK on Android 9 and later) lists a copy signed
+with a key the build is not signed with. The `--json` record carries what
+the device listed as `installed`. When the device's answer cannot be
+read, the install stays `ok` with the warning `install not confirmed`.
+iOS installs are not read back.
+
 With `--dry-run`, `install` stops after those checks. Each device that
 would take the build is reported `ok` at stage `preflight` with
 `would install; nothing was sent (dry run)` (and `"dry_run": true` in

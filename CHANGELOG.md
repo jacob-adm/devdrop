@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Android installs are confirmed: after adb reports success, devdrop
+  reads back what the device holds and fails the device at the new stage
+  `verify` when the app is missing, its `versionCode` differs from the
+  build's, or (an APK on Android 9 and later) it is signed with another
+  key. `--json` records carry what the device listed as `installed`. An
+  answer that cannot be read leaves the install `ok` with the warning
+  `install not confirmed`.
+
 ## 0.3.4 - 2026-11-21
 
 - A second Ctrl-C during an install stops at once, as the 0.3.1 notes

@@ -32,7 +32,8 @@ def adb_rules(devices=LAB, install_out=None, extra=()):
             {"match": ["-s", serial, "am", "start"],
              "stdout": "Starting: Intent { cmp=com.example.app/.MainActivity }\n"},
         ]
-    return rules
+    # Last, so a test's own dumpsys rules win: a device that lists the app and says no more.
+    return rules + [{"match": ["dumpsys", "package"], "stdout": "Packages:\n  Package [com.example.app] (1):\n"}]
 
 
 class Selectors(unittest.TestCase):
@@ -222,8 +223,15 @@ class InstallCommand(unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertIn("--dry-run cannot be used with --watch", r.stderr)
 
-    def state_rules(self, serial, dumpsys, free_kb=900000):
-        return [{"match": ["-s", serial, "dumpsys", "package"], "stdout": dumpsys},
+    def state_rules(self, serial, dumpsys, free_kb=900000, after=None):
+        """What the device reports before an install, and (with after) once adb has installed."""
+        marker = os.path.join(self.fake.root, f"installed-{serial}")
+        rules = [{"match": ["-s", serial, "install"], "touch": marker,
+                  "stdout": "Performing Streamed Install\nSuccess\n"}]
+        if after is not None:
+            rules.append({"match": ["-s", serial, "dumpsys", "package"], "when_file": marker,
+                          "stdout": after})
+        return rules + [{"match": ["-s", serial, "dumpsys", "package"], "stdout": dumpsys},
                 {"match": ["-s", serial, "dumpsys", "diskstats"],
                  "stdout": f"Latency: 1ms [512B Data Write]\nData-Free: {free_kb}K / 10167132K total = 8% free\n"}]
 
@@ -235,7 +243,8 @@ class InstallCommand(unittest.TestCase):
                  extra=self.state_rules("AAA111", DUMPSYS_35.format(code=7, ids="deadbeef", past=""))
                  + self.state_rules("BBB222", DUMPSYS_35.format(code=9, ids=mine, past=""))
                  + self.state_rules("CCC333", DUMPSYS_35.format(code=7, ids=mine, past=""), free_kb=0)
-                 + self.state_rules("DDD444", DUMPSYS_35.format(code=6, ids=mine, past="")))
+                 + self.state_rules("DDD444", DUMPSYS_35.format(code=6, ids=mine, past=""),
+                                    after=DUMPSYS_35.format(code=7, ids=mine, past="")))
         r = devdrop(self.fake, "install", self.apk, "--json")
         self.assertEqual(r.returncode, 1, r.stderr)
         recs = {x["id"]: x for x in json.loads(r.stdout)["results"]}
@@ -250,10 +259,51 @@ class InstallCommand(unittest.TestCase):
     def test_clean_installs_over_a_different_key_and_a_newer_version(self):
         b.apk(self.apk, b.axml(b.manifest(min_sdk=21, version_code=7)), v2=True, certs=(CERT,))
         self.adb(devices=[("AAA111", 35, "15", "Pixel 9")],
-                 extra=self.state_rules("AAA111", DUMPSYS_35.format(code=9, ids="deadbeef", past="")))
+                 extra=self.state_rules("AAA111", DUMPSYS_35.format(code=9, ids="deadbeef", past=""),
+                                        after=DUMPSYS_35.format(code=7, ids=artifact.android_cert_id(CERT),
+                                                                past="")))
         r = devdrop(self.fake, "install", self.apk, "--clean", "--json")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.installs(), ["AAA111"])
+
+    def confirm_run(self, after, version_code=7):
+        """Install a v7 APK on one Android 15 device that reports `after` once installed."""
+        b.apk(self.apk, b.axml(b.manifest(min_sdk=21, version_code=version_code)), v2=True, certs=(CERT,))
+        self.adb(devices=[("AAA111", 35, "15", "Pixel 9")],
+                 extra=self.state_rules("AAA111", "Unable to find package: com.example.app\n", after=after))
+        r = devdrop(self.fake, "install", self.apk, "--json")
+        return r, json.loads(r.stdout)["results"][0]
+
+    def test_install_is_confirmed_by_reading_the_device_back(self):
+        mine = artifact.android_cert_id(CERT)
+        r, rec = self.confirm_run(DUMPSYS_35.format(code=7, ids=mine, past=""))
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((rec["result"], rec["stage"]), ("ok", "install"))
+        self.assertEqual(rec["installed"], {"version_code": 7, "cert_ids": [mine]})
+        self.assertEqual(rec["warnings"], [])
+
+    def test_a_device_still_holding_another_version_fails_at_verify(self):
+        r, rec = self.confirm_run(DUMPSYS_35.format(code=6, ids=artifact.android_cert_id(CERT), past=""))
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual((rec["result"], rec["stage"]), ("failed", "verify"))
+        self.assertEqual(rec["reason"], "the device holds versionCode 6, the build is 7")
+
+    def test_a_copy_signed_with_another_key_fails_at_verify(self):
+        r, rec = self.confirm_run(DUMPSYS_35.format(code=7, ids="deadbeef", past=""))
+        self.assertEqual((rec["result"], rec["stage"]), ("failed", "verify"))
+        self.assertIn("different key", rec["reason"])
+
+    def test_an_app_missing_after_success_fails_at_verify(self):
+        # What Android 15 prints for a package that is not installed.
+        r, rec = self.confirm_run("Unable to find package: com.example.app\n")
+        self.assertEqual((rec["result"], rec["stage"]), ("failed", "verify"))
+        self.assertEqual(rec["reason"], "the app is not on the device after the install")
+
+    def test_an_unreadable_answer_is_a_warning_not_a_failure(self):
+        r, rec = self.confirm_run("")
+        self.assertEqual((rec["result"], rec["stage"]), ("ok", "install"))
+        self.assertNotIn("installed", rec)
+        self.assertEqual(rec["warnings"], ["install not confirmed: the device did not list the app afterwards"])
 
     def test_a_device_that_cannot_be_asked_still_gets_the_install(self):
         self.adb(extra=[{"match": ["dumpsys"], "rc": 1, "stderr": "error: closed\n"}])
