@@ -91,13 +91,14 @@ class FakeTools:
 
     def close(self):
         # Windows refuses to delete a running .exe. A test that ends devdrop with
-        # terminate() can leave one stand-in call still finishing, so wait for it.
+        # terminate() can leave one stand-in call still finishing (and still writing
+        # its call log), so wait for it.
         deadline = time.monotonic() + 10
         while True:
             try:
                 self._tmp.cleanup()
                 return
-            except PermissionError:
+            except OSError:
                 if time.monotonic() > deadline:
                     raise
                 time.sleep(0.2)
