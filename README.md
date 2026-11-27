@@ -13,6 +13,17 @@ simulators and one physical iPhone; not yet on physical Android phones,
 tablets or iPads. [Testing](https://github.com/jacob-adm/devdrop/blob/main/docs/testing.md)
 lists what was run where, and what was not.
 
+## Example output
+
+One Android build and one iOS build installed and launched together on an Android emulator and
+an iPhone simulator; `--to emulator,simulator` leaves physical devices out:
+
+<p align="center"><img src="https://raw.githubusercontent.com/jacob-adm/devdrop/main/docs/screenshots/devdrop-install.svg" alt="devdrop install --launch: the APK on an Android emulator and the app on an iPhone simulator, 2 ok"></p>
+
+What `inspect` reads from an APK before anything is installed:
+
+<p align="center"><img src="https://raw.githubusercontent.com/jacob-adm/devdrop/main/docs/screenshots/devdrop-inspect.svg" alt="devdrop inspect demo.apk: package id, version, SDK levels, signing schemes and 16 KB page readiness"></p>
+
 ## Requirements
 
 - Python 3.11 or later
