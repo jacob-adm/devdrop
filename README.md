@@ -1,5 +1,7 @@
 # devdrop
 
+[![Test](https://github.com/jacob-adm/devdrop/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/jacob-adm/devdrop/actions/workflows/test.yml) [![Release](https://img.shields.io/github/v/release/jacob-adm/devdrop?style=flat-square&color=0F6378&label=release)](https://github.com/jacob-adm/devdrop/releases/latest) [![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https://raw.githubusercontent.com/jacob-adm/devdrop/main/pyproject.toml&style=flat-square&color=0F6378&label=python)](https://github.com/jacob-adm/devdrop/blob/main/pyproject.toml) [![Licence](https://img.shields.io/github/license/jacob-adm/devdrop?style=flat-square&color=0F6378&label=licence)](https://github.com/jacob-adm/devdrop#license)
+
 Install one Android or iOS build on every phone, tablet, emulator and
 simulator you have attached, all at once.
 
