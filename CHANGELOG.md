@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 - 2026-11-28
+
+- `devices` takes `--to SEL`, the selector `install`, `launch` and the other
+  commands take, and lists only the devices it selects (`--json` too). For
+  example `devdrop devices --to emulator,simulator` leaves physical devices
+  out. Without `--to` the output is unchanged.
+
 ## 0.4.0 - 2026-11-27
 
 - Android installs are confirmed: after adb reports success, devdrop
