@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1044" height="161" viewBox="0 0 1044 161" role="img" aria-label="devdrop-devices">
+<title>devdrop-devices</title>
+<rect x="0.5" y="0.5" width="1043" height="160" rx="8" fill="#0d1117" stroke="#30363d"/>
+<path d="M0.5 34V8.5a8 8 0 0 1 8-8h1027a8 8 0 0 1 8 8V34z" fill="#161b22"/>
+<circle cx="18" cy="17" r="6" fill="#ff5f57"/>
+<circle cx="38" cy="17" r="6" fill="#febc2e"/>
+<circle cx="58" cy="17" r="6" fill="#28c840"/>
+<text x="522.0" y="21" text-anchor="middle" fill="#8b949e" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">devdrop-devices</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">
+<text x="18" y="62" fill="#7ee787">$ devdrop devices --to emulator,simulator</text>
+<text x="18" y="82" fill="#e6edf3">ID                                    NAME           PLATFORM  KIND       MAKER   MODEL               OS           STATE</text>
+<text x="18" y="102" fill="#e6edf3">emulator-5554                         devdrop_api35  android   emulator   Google  sdk_gphone64_arm64  15 (API 35)  ready</text>
+<text x="18" y="122" fill="#e6edf3">A5A0CA8B-5A77-467B-9ED7-B61AFFFFB48B  iPhone 17 Pro  ios       simulator  Apple   iPhone 17 Pro       26.3         ready</text>
+<text x="18" y="142" fill="#8b949e"># exit status 0</text>
+</g></svg>
