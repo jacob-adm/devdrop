@@ -1,4 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
 """Install one mobile build on every attached Android and iOS device."""
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
