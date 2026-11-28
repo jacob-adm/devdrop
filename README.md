@@ -88,7 +88,7 @@ developer, 7-day builds on a free account): see
 ## Commands
 
 ```
-devdrop devices [--json] [--all]   list attached devices and their state
+devdrop devices [--json] [--all] [--to SEL]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
 devdrop install PATH [PATH] [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]

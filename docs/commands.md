@@ -3,7 +3,7 @@
 What each devdrop command does, what `install` checks first, and the exit codes.
 
 ```
-devdrop devices [--json] [--all]   list attached devices and their state
+devdrop devices [--json] [--all] [--to SEL]   list attached devices and their state
 devdrop doctor                     check the toolchain; say what to fix on each device
 devdrop inspect PATH [--json]      show what an .apk, .aab, .ipa or .app contains
 devdrop install PATH [PATH] [--to SEL] [--launch] [--clean] [--dry-run] [--jobs N] [--json]
@@ -25,6 +25,9 @@ devdrop shutdown [--to SEL] [--json]
 emulator, simulator), model, OS version and state. Only `ready` devices
 take installs; any other state names what needs doing, and `doctor` gives
 the fix. Simulators are listed when booted; `--all` adds shut-down ones.
+`--to SEL` lists only the devices that `--to SEL` would select in `install`, `launch` and the other
+commands, with the same selector (for example `--to emulator,simulator`); without it every device is
+listed. `--json` lists the same devices.
 
 On a Mac, `doctor` also shows which Xcode is selected (`xcode-select -p`;
 every `xcrun` call uses that one) and the installed iOS simulator

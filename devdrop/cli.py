@@ -116,6 +116,11 @@ def cmd_devices(args):
     devices, backends = inventory(args.all)
     for dev in devices:
         dev.name = _name(cfg, dev)
+    try:
+        devices = select(devices, args.to, cfg)  # the same selector the other commands take
+    except SelectorError as e:
+        print(f"devdrop: {e}", file=sys.stderr)
+        return USAGE
     missing = all(b["tool"] is None for b in backends.values())
     failed = any(b["tool"] is not None and b["error"] for b in backends.values())
     if args.json:
@@ -680,6 +685,9 @@ def build_parser():
     d.add_argument("--json", action="store_true", help="machine-readable output")
     d.add_argument("--all", action="store_true",
                    help="include stopped Android virtual devices and shut-down simulators")
+    d.add_argument("--to", default="all", metavar="SEL",
+                   help="list only these devices, with the selector the other commands take "
+                        "(default: all)")
     d.set_defaults(func=cmd_devices)
     i = sub.add_parser("inspect", help="show what an .apk, .ipa or .app contains")
     i.add_argument("path")
