@@ -17,6 +17,11 @@ lists what was run where, and what was not.
 
 ## Example output
 
+`devices` lists what is attached and which devices are ready; `--to emulator,simulator` shows only
+the virtual ones, as it does for `install`:
+
+<p align="center"><img src="https://raw.githubusercontent.com/jacob-adm/devdrop/main/docs/screenshots/devdrop-devices.svg" alt="devdrop devices --to emulator,simulator: an Android emulator and an iPhone simulator, both ready"></p>
+
 One Android build and one iOS build installed and launched together on an Android emulator and
 an iPhone simulator; `--to emulator,simulator` leaves physical devices out:
 
