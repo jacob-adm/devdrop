@@ -113,6 +113,33 @@ class DevicesCommand(unittest.TestCase):
         self.assertEqual(asked, {"emulator-5554", "37201FDH2000CK",
                                  "adb-0A1B2C3D-Xy9zQw._adb-tls-connect._tcp"})
 
+    def test_to_lists_only_the_selected_devices(self):
+        env = self.sdk_adb()
+        self.fake.add("xcrun", xcrun_rules())
+        everything = json.loads(devdrop(self.fake, "devices", "--json", env_extra=env).stdout)["devices"]
+        r = devdrop(self.fake, "devices", "--json", "--to", "emulator,ios", env_extra=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        chosen = json.loads(r.stdout)["devices"]
+        self.assertTrue(chosen)
+        self.assertEqual(chosen, [d for d in everything if d["kind"] == "emulator" or d["platform"] == "ios"])
+        table = devdrop(self.fake, "devices", "--to", "emulator", env_extra=env).stdout
+        self.assertIn("emulator-5554", table)
+        self.assertNotIn("37201FDH2000CK", table)  # a physical phone is left out
+
+    def test_without_to_and_with_all_the_output_is_the_same(self):
+        env = self.sdk_adb()
+        self.fake.add("xcrun", xcrun_rules())
+        plain = devdrop(self.fake, "devices", env_extra=env)
+        explicit = devdrop(self.fake, "devices", "--to", "all", env_extra=env)
+        self.assertEqual((plain.returncode, plain.stdout), (explicit.returncode, explicit.stdout))
+
+    def test_empty_selector_is_a_usage_error(self):
+        env = self.sdk_adb()
+        r = devdrop(self.fake, "devices", "--to", ",", env_extra=env)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("empty --to selector", r.stderr)
+        self.assertEqual(r.stdout, "")
+
     def test_no_xcode_reports_ios_unsupported_and_exits_0(self):
         env = self.sdk_adb()
         r = devdrop(self.fake, "devices", "--json", env_extra=env)
